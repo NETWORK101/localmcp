@@ -4,7 +4,7 @@ localmcp (npm: `localmcp`) gives you five MCP tools for reading the web through 
 
 ## Setup
 
-If the tools aren't available, ask the user to run `npx localmcp init` and restart their client. For pages behind a login, have them run `npx localmcp login <url>` once.
+If the tools aren't available, ask the user to run `npx @network101/localmcp init` and restart their client. For pages behind a login, have them run `npx @network101/localmcp login <url>` once.
 
 ## How to use them well
 

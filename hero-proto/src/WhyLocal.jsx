@@ -63,7 +63,7 @@ export function WhyLocal() {
                 <span className="panel-tag">once per site</span>
               </div>
               <div className="panel-body">
-                <Command text="npx localmcp login https://dashboard.stripe.com" />
+                <Command text="npx @network101/localmcp login https://dashboard.stripe.com" />
                 <pre className="term-out">
 <span className="t-dim"># a visible Chromium window opens</span>{'\n'}
 <span className="t-dim"># profile: ~/.localmcp/profile</span>{'\n'}
@@ -89,7 +89,7 @@ export function WhyLocal() {
         <div className="browsers reveal">
           <div className="browsers-head">
             <h3>Browsers</h3>
-            <p>Each engine keeps its own signed-in profile. <code>npx localmcp login &lt;url&gt; --browser firefox</code></p>
+            <p>Each engine keeps its own signed-in profile. <code>npx @network101/localmcp login &lt;url&gt; --browser firefox</code></p>
           </div>
           <table className="browsers-table">
             <thead>

@@ -138,4 +138,4 @@ Supported action types:
 | Cursor | `.cursor/mcp.json` in home dir | [cursor_mcp.json](cursor_mcp.json) |
 | OpenAI Codex CLI | `.codex/config.json` | [codex_config.json](codex_config.json) |
 
-Or just run `npx localmcp init` to auto-detect and configure.
+Or just run `npx @network101/localmcp init` to auto-detect and configure.

@@ -2,7 +2,7 @@
   "mcpServers": {
     "localmcp": {
       "command": "npx",
-      "args": ["-y", "localmcp"],
+      "args": ["-y", "@network101/localmcp"],
       "env": {}
     }
   }

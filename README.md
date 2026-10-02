@@ -3,8 +3,8 @@
 **A local, read-optimized browser for AI agents.** Your agent reads any page — including the ones you're signed in to — as focused, token-budgeted markdown. Runs a real Chromium on your machine. No cloud relay, no API key, no account.
 
 ```bash
-claude mcp add localmcp -- npx -y localmcp     # Claude Code
-npx localmcp init                                # everything else: prints config for your clients
+claude mcp add localmcp -- npx -y @network101/localmcp   # Claude Code
+npx @network101/localmcp init                            # everything else: prints config for your clients
 ```
 
 [![npm](https://img.shields.io/npm/v/localmcp)](https://www.npmjs.com/package/localmcp) · MIT · Node ≥ 20 · [Website](https://localmcp.pages.dev)
@@ -24,7 +24,7 @@ localmcp is the reading-first option: the page itself — no summarizer in the m
 
 ## What's new in 0.2
 
-- **Real authenticated browsing.** `npx localmcp login <url>` opens a visible browser on a private profile. Sign in once; the agent reuses the session. Or attach to your own Chrome over CDP.
+- **Real authenticated browsing.** `npx @network101/localmcp login <url>` opens a visible browser on a private profile. Sign in once; the agent reuses the session. Or attach to your own Chrome over CDP.
 - **Focus + budget.** `browse({ url, focus: "rate limits", maxTokens: 1500 })` ranks sections by relevance and returns only what fits — and tells the agent which sections it left out.
 - **Structured extraction with MCP sampling.** `extract` returns JSON-LD, meta tags, and tables as row objects. Pass a `schema` and your *client's own model* fills it — no extra API key.
 - **Current MCP spec.** Tool `annotations`, `outputSchema` + `structuredContent`, server `instructions`, progress notifications, and diff snapshots as resources.
@@ -66,9 +66,9 @@ Read-only annotations let clients auto-approve reads while still confirming `int
 The same tools and policy, with no tool schema in your agent's context:
 
 ```bash
-npx localmcp read https://docs.stripe.com/api --focus "pagination" --max-tokens 1500
-npx localmcp extract https://example.com/pricing --schema '{"plans":[{"name":"string"}]}' --json
-npx localmcp links https://docs.example.com --same-origin --match /api/
+npx @network101/localmcp read https://docs.stripe.com/api --focus "pagination" --max-tokens 1500
+npx @network101/localmcp extract https://example.com/pricing --schema '{"plans":[{"name":"string"}]}' --json
+npx @network101/localmcp links https://docs.example.com --same-origin --match /api/
 ```
 
 `--json` prints `structuredContent`; otherwise you get the same fenced markdown the MCP tools return. Exit code 1 means a policy block or a page error.
@@ -129,7 +129,7 @@ Password values are never echoed back. If an action navigates to a host your pol
 **Option A: dedicated profile (recommended)**
 
 ```bash
-npx localmcp login https://dashboard.stripe.com
+npx @network101/localmcp login https://dashboard.stripe.com
 ```
 
 A browser window opens on `~/.localmcp/profile`. Sign in to whatever your agent should read, then close the window. With the default `browser.profile: "auto"`, localmcp uses that profile from then on. Chromium locks a profile to one process. If two clients run localmcp at once, the second one falls back to an ephemeral session and says so in its output.
@@ -159,11 +159,11 @@ localmcp opens its own tabs in your existing session and never closes your brows
 | Your running Safari | `safaridriver` | Roadmap |
 | Tabs in your everyday browser, no flags | extension bridge | Roadmap |
 
-Firefox and WebKit need a one-time `npx playwright install firefox webkit`. Sign in per engine with `npx localmcp login <url> --browser firefox`.
+Firefox and WebKit need a one-time `npx playwright install firefox webkit`. Sign in per engine with `npx @network101/localmcp login <url> --browser firefox`.
 
 ## Configuration
 
-`npx localmcp init` writes `.localmcp.json`. Global defaults can live in `~/.config/localmcp/config.json`; project config wins.
+`npx @network101/localmcp init` writes `.localmcp.json`. Global defaults can live in `~/.config/localmcp/config.json`; project config wins.
 
 ```jsonc
 {
@@ -201,7 +201,7 @@ Host globs: `example.com` (exact host, any port), `*.example.com` (subdomains, n
 - **Nothing is relayed.** Pages are fetched and distilled by a browser on your machine, then go only to the model your agent already uses. No telemetry, no account.
 - **Policy at the boundary.** Every URL is checked before a browser is touched, and again after redirects or actions that change origin. Deny rules also apply to every request a page makes — images, iframes, scripts, fetches — including when attached to your own browser. Only `http(s)` is allowed by default; `file:`, `javascript:`, `chrome:`, `data:` are refused.
 - **Prompt-injection fence.** Page content comes back inside `<untrusted-page-content>` tags, and the server's `instructions` tell the model to treat it as data. Pages that try to close the fence early are neutralised. This *reduces* injection risk; it doesn't eliminate it. Keep `interact` confirmations on in your client.
-- **Circuit breaker.** Daily session and token caps (local SQLite at `~/.localmcp/usage.db`). `npx localmcp usage` shows totals. `LOCALMCP_NO_LIMIT=1` overrides.
+- **Circuit breaker.** Daily session and token caps (local SQLite at `~/.localmcp/usage.db`). `npx @network101/localmcp usage` shows totals. `LOCALMCP_NO_LIMIT=1` overrides.
 
 ## MCP protocol surface
 

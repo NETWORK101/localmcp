@@ -48,7 +48,7 @@ export function Safety() {
             <div>
               <dt><span className="sl-n">e</span>Daily circuit breaker</dt>
               <dd>Local caps on sessions and tokens per day stop a runaway loop. No telemetry, no account. Check the meter any time:
-                <Command text="npx localmcp usage" />
+                <Command text="npx @network101/localmcp usage" />
               </dd>
             </div>
           </dl>

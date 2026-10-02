@@ -1,5 +1,5 @@
 {
-  "name": "localmcp",
+  "name": "@network101/localmcp",
   "version": "0.3.0",
   "description": "localmcp: a local, scoped, read-first browser for AI agents over MCP and the shell. The page itself, not a summary.",
   "type": "module",
@@ -72,6 +72,7 @@
     "vitest": "^4.1.8"
   },
   "mcpName": "io.github.network101/localmcp",
+  "publishConfig": { "access": "public" },
   "bugs": {
     "url": "https://github.com/NETWORK101/localmcp/issues"
   }

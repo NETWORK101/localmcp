@@ -52,7 +52,7 @@ const TASKS = [
         outcome: 'ok', note: 'Works if you’ve set up a logged-in profile — at automation prices for a read.',
       },
       bmcp: {
-        steps: ['npx localmcp login dashboard.stripe.com  # once', 'browse({ url, focus: "failed payouts" })'],
+        steps: ['npx @network101/localmcp login dashboard.stripe.com  # once', 'browse({ url, focus: "failed payouts" })'],
         calls: '1', context: '~1–3k typical',
         outcome: 'ok', note: 'Your session, on your disk. The page never touches a third-party server.',
       },
