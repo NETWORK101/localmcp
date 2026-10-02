@@ -7,7 +7,7 @@ claude mcp add localmcp -- npx -y localmcp     # Claude Code
 npx localmcp init                                # everything else: prints config for your clients
 ```
 
-[![npm](https://img.shields.io/npm/v/localmcp)](https://www.npmjs.com/package/localmcp) · MIT · Node ≥ 20 · [Website](https://browsermcp.pages.dev)
+[![npm](https://img.shields.io/npm/v/localmcp)](https://www.npmjs.com/package/localmcp) · MIT · Node ≥ 20 · [Website](https://localmcp.pages.dev)
 
 ---
 

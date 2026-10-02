@@ -52,7 +52,7 @@
     "type": "git",
     "url": "git+https://github.com/NETWORK101/localmcp.git"
   },
-  "homepage": "https://github.com/NETWORK101/localmcp#readme",
+  "homepage": "https://localmcp.pages.dev",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@mozilla/readability": "^0.6.0",

@@ -1,0 +1,38 @@
+name: Deploy site
+
+on:
+  push:
+    branches: [main]
+    paths: ['hero-proto/**', '.github/workflows/deploy-site.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: hero-proto/package-lock.json
+      - run: npm ci
+        working-directory: hero-proto
+      - run: npx vite build
+        working-directory: hero-proto
+      - name: Deploy to Cloudflare Pages (localmcp.pages.dev)
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy hero-proto/dist --project-name localmcp --branch main
+      - name: Skip (no Cloudflare secrets)
+        if: env.CLOUDFLARE_API_TOKEN == ''
+        run: echo "::warning::Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (Settings → Secrets → Actions) to deploy automatically."
