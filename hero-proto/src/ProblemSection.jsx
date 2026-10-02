@@ -43,6 +43,12 @@ const PAINS = [
     why: 'Page text lands in the agent’s context looking just like your instructions. That’s how prompt injection works.',
     fix: 'Every page is fenced as untrusted data; domains and actions are limited by policy.',
   },
+  {
+    tag: 'Keys in context',
+    says: '“I can’t sign in for you. Paste your API token and I’ll use that instead.”',
+    why: 'The token lands in the chat, the transcript and often your shell history. While it sits in context, any page the agent reads next can try to talk it back out.',
+    fix: 'Sign in once, by hand. The agent gets the page — never the password, cookie or token.',
+  },
 ]
 
 export function ProblemSection() {
