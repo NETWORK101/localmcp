@@ -11,3 +11,7 @@ packages/*/dist
 
 # Playwright MCP snapshot output (benchmark runs)
 .playwright-mcp/
+
+# local research artifacts, not part of the project
+headlessdev-*
+flow-experience-design-*.html
