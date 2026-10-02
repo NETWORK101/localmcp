@@ -50,9 +50,9 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/NETWORK101/browsermcp.ai"
+    "url": "git+https://github.com/NETWORK101/localmcp.git"
   },
-  "homepage": "https://github.com/NETWORK101/browsermcp.ai#readme",
+  "homepage": "https://github.com/NETWORK101/localmcp#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@mozilla/readability": "^0.6.0",
@@ -71,5 +71,8 @@
     "typescript": "^5.0.0",
     "vitest": "^4.1.8"
   },
-  "mcpName": "io.github.network101/localmcp"
+  "mcpName": "io.github.network101/localmcp",
+  "bugs": {
+    "url": "https://github.com/NETWORK101/localmcp/issues"
+  }
 }

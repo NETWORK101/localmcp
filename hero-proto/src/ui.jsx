@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react'
 
 export const LINKS = {
-  github: 'https://github.com/NETWORK101/browsermcp.ai',
+  github: 'https://github.com/NETWORK101/localmcp',
   npm: 'https://www.npmjs.com/package/localmcp',
-  docs: 'https://github.com/NETWORK101/browsermcp.ai#readme',
+  docs: 'https://github.com/NETWORK101/localmcp#readme',
 }
 
 export const INSTALL = 'npx localmcp init'
