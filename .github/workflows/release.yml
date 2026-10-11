@@ -25,7 +25,14 @@ jobs:
       - run: npm test
       - name: Publish
         if: env.NODE_AUTH_TOKEN != ''
-        run: npm publish --provenance --access public
+        run: |
+          set -o pipefail
+          # Surface the reason as annotations so a failed publish is diagnosable from the run summary.
+          if who=$(npm whoami 2>&1); then echo "::notice::NPM_TOKEN authenticates as npm user '$who'"; else echo "::error::NPM_TOKEN did not authenticate (npm whoami failed): $(echo "$who" | grep -m1 'npm error' || true)"; fi
+          if ! npm publish --provenance --access public 2>&1 | tee publish.log; then
+            grep -E '^npm (error|ERR!)' publish.log | grep -v 'A complete log' | head -8 | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          fi
       - name: Skip (no NPM_TOKEN)
         if: env.NODE_AUTH_TOKEN == ''
         run: echo "::warning::NPM_TOKEN secret not set — add it under Settings → Secrets → Actions, then re-run this workflow."
