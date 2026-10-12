@@ -31,7 +31,7 @@ export function Nav() {
         <a href="#top" className="brand" aria-label="localmcp — home">
           <Mark />
           <span className="brand-name">localmcp</span>
-          <span className="brand-ver">v0.3.0</span>
+          <span className="brand-ver">v0.3.1</span>
         </a>
 
         <ul className="nav-links">

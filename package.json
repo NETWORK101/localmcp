@@ -1,6 +1,6 @@
 {
   "name": "@network101/localmcp",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "localmcp: a local, scoped, read-first browser for AI agents over MCP and the shell. The page itself, not a summary.",
   "type": "module",
   "main": "dist/src/index.js",

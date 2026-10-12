@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1 — 2026-10-12
+
+First release on npm under the scoped name. `npx -y @network101/localmcp` now resolves.
+
+### Fixed
+- `localmcp --version` and the MCP server's `serverInfo.version` reported `0.0.0`: the version reader only recognised a manifest named `localmcp`, not `@network101/localmcp`. It accepts both.
+
 ## 0.3.0 — 2026-10-01
 
 ### Renamed

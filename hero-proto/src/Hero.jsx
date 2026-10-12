@@ -36,7 +36,7 @@ export function Hero() {
           <span className="mh-hide-xs">Runs on your machine</span>
           <span className="mh-dot mh-hide" aria-hidden="true" />
           <span className="mh-hide">No relay · no extension · no API key</span>
-          <span className="mh-right">No. 0.3.0</span>
+          <span className="mh-right">No. 0.3.1</span>
         </div>
 
         <h1 className="hero-title" id="hero-title" aria-label="Let your agent read the web securely and locally">

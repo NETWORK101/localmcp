@@ -16,7 +16,7 @@ export function Footer() {
           <a href="#top">Back to top ↑</a>
         </nav>
         <p className="footer-colophon">
-          <span>localmcp v0.3.0</span>
+          <span>localmcp v0.3.1</span>
           <span>Set in Inter Tight &amp; Geist Mono</span>
           <span>Not affiliated with Browser MCP (browsermcp.io) or the local-mcp / @localmcp packages</span>
         </p>
