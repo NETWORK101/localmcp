@@ -2,15 +2,15 @@
 
 ## 0.3.1 — 2026-10-12
 
-First release on npm under the scoped name. `npx -y @network101/localmcp` now resolves.
+First release on npm under the scoped name. `npx -y @localmcpserv/localmcp` now resolves.
 
 ### Fixed
-- `localmcp --version` and the MCP server's `serverInfo.version` reported `0.0.0`: the version reader only recognised a manifest named `localmcp`, not `@network101/localmcp`. It accepts both.
+- `localmcp --version` and the MCP server's `serverInfo.version` reported `0.0.0`: the version reader only recognised a manifest named `localmcp`, not `@localmcpserv/localmcp`. It accepts both.
 
 ## 0.3.0 — 2026-10-01
 
 ### Renamed
-- The package is now **`@network101/localmcp`** (previously `browsermcpai`, and `headlessdev` before that). Plain `localmcp` is too close to the existing `local-mcp` on npm, so it ships under the NETWORK101 scope. The command is still `localmcp`. MCP client configs: `npx -y @network101/localmcp`; Claude Code: `claude mcp add localmcp -- npx -y @network101/localmcp`.
+- The package is now **`@localmcpserv/localmcp`** (previously `browsermcpai`, and `headlessdev` before that). Plain `localmcp` is too close to the existing `local-mcp` on npm, so it ships under the `@localmcpserv` scope (the npm account that publishes it; the `@network101` scope is not owned by that account). The command is still `localmcp`. MCP client configs: `npx -y @localmcpserv/localmcp`; Claude Code: `claude mcp add localmcp -- npx -y @localmcpserv/localmcp`.
 - Everything from the old name keeps working: `.browsermcp.json` and `~/.config/browsermcp/config.json` are read when the new files don't exist, `~/.browsermcp` (saved logins, usage) is used when `~/.localmcp` doesn't exist, and `BROWSERMCP_NO_LIMIT` still overrides the circuit breaker. New names: `.localmcp.json`, `~/.config/localmcp/config.json`, `~/.localmcp`, `LOCALMCP_NO_LIMIT`.
 
 ### Added
