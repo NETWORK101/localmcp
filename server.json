@@ -11,7 +11,7 @@
   "packages": [
     {
       "registryType": "npm",
-      "identifier": "@network101/localmcp",
+      "identifier": "@localmcpserv/localmcp",
       "version": "0.3.1",
       "transport": {
         "type": "stdio"

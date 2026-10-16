@@ -8,9 +8,10 @@ function readVersion(): string {
   for (let i = 0; i < 4; i++) {
     try {
       const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf-8'));
-      // The package is published as @network101/localmcp; the bare name is the
+      // The package is published as @localmcpserv/localmcp (0.3.0 manifests said
+      // @network101/localmcp); the bare name is the
       // pre-scope manifest. Either is ours, so neither reports 0.0.0.
-      if (pkg.name === 'localmcp' || pkg.name === '@network101/localmcp') return pkg.version;
+      if (pkg.name === 'localmcp' || pkg.name === '@network101/localmcp' || pkg.name === '@localmcpserv/localmcp') return pkg.version;
     } catch {
       /* keep walking up */
     }
