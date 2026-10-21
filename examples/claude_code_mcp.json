@@ -2,7 +2,7 @@
   "mcpServers": {
     "localmcp": {
       "command": "npx",
-      "args": ["-y", "@localmcpserv/localmcp"],
+      "args": ["-y", "@localmcp_serv/localmcp"],
       "type": "stdio"
     }
   }

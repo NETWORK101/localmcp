@@ -6,8 +6,8 @@ export const LINKS = {
   docs: 'https://github.com/NETWORK101/localmcp#readme',
 }
 
-export const INSTALL = 'npx @localmcpserv/localmcp init'
-export const CLAUDE_CODE = 'claude mcp add localmcp -- npx -y @localmcpserv/localmcp'
+export const INSTALL = 'npx @localmcp_serv/localmcp init'
+export const CLAUDE_CODE = 'claude mcp add localmcp -- npx -y @localmcp_serv/localmcp'
 
 export function prefersReducedMotion() {
   if (typeof window === 'undefined' || !window.matchMedia) return false

@@ -2,7 +2,7 @@
 
 ## 0.3.1 — 2026-10-12
 
-First release on npm. The package ships under the **`@localmcpserv`** scope: `npx -y @localmcpserv/localmcp`; Claude Code: `claude mcp add localmcp -- npx -y @localmcpserv/localmcp`. (0.3.0's notes named `@network101/localmcp`; that scope was never registered on npm, so nothing was published under it.) The MCP registry name stays `io.github.network101/localmcp`, which follows the GitHub org.
+First release on npm. The package ships under the **`@localmcp_serv`** scope: `npx -y @localmcp_serv/localmcp`; Claude Code: `claude mcp add localmcp -- npx -y @localmcp_serv/localmcp`. (0.3.0's notes named `@network101/localmcp`; that scope was never registered on npm, so nothing was published under it.) The MCP registry name stays `io.github.network101/localmcp`, which follows the GitHub org.
 
 ### Fixed
 - `localmcp --version` and the MCP server's `serverInfo.version` reported `0.0.0`: the version reader only recognised a manifest named `localmcp`, not `@network101/localmcp`. It accepts both.

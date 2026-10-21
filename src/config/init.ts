@@ -4,7 +4,7 @@ import { homedir } from 'os';
 import { DEFAULT_CONFIG, ENGINES, loadConfig, type BrowserEngine } from './schema.js';
 import { browserTypeFor, launchOptions, profileDirFor } from '../browser/manager.js';
 
-const SERVER_ENTRY = { command: 'npx', args: ['-y', '@localmcpserv/localmcp'] };
+const SERVER_ENTRY = { command: 'npx', args: ['-y', '@localmcp_serv/localmcp'] };
 
 const bold = (s: string) => (process.stdout.isTTY ? `\x1b[1m${s}\x1b[0m` : s);
 const dim = (s: string) => (process.stdout.isTTY ? `\x1b[2m${s}\x1b[0m` : s);
@@ -33,7 +33,7 @@ function clientTargets(): ClientTarget[] {
       name: 'Claude Code',
       detected: existsSync(join(home, '.claude.json')) || existsSync(join(home, '.claude')),
       where: 'run once in your terminal',
-      snippet: 'claude mcp add localmcp -- npx -y @localmcpserv/localmcp',
+      snippet: 'claude mcp add localmcp -- npx -y @localmcp_serv/localmcp',
     },
     {
       name: 'Claude Desktop',
@@ -57,7 +57,7 @@ function clientTargets(): ClientTarget[] {
       name: 'Codex CLI',
       detected: existsSync(join(home, '.codex')),
       where: join(home, '.codex', 'config.toml'),
-      snippet: '[mcp_servers.localmcp]\ncommand = "npx"\nargs = ["-y", "@localmcpserv/localmcp"]',
+      snippet: '[mcp_servers.localmcp]\ncommand = "npx"\nargs = ["-y", "@localmcp_serv/localmcp"]',
     },
   ];
 }
@@ -90,7 +90,7 @@ export async function runInit(): Promise<void> {
 
   // 3. Authenticated browsing
   console.log(bold('\nRead pages you are signed in to'));
-  console.log('  npx @localmcpserv/localmcp login https://dashboard.stripe.com');
+  console.log('  npx @localmcp_serv/localmcp login https://dashboard.stripe.com');
   console.log(dim('  Opens a browser on a private profile (~/.localmcp/profile). Sign in, close the window,'));
   console.log(dim('  and your agent reuses that session. Or attach to your own Chrome with "cdpEndpoint".'));
   console.log(bold('\nOther browsers'));
