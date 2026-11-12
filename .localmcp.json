@@ -1,0 +1,24 @@
+{
+  "browser": {
+    "timeout": 30000,
+    "headless": true,
+    "engine": "chromium",
+    "profile": "auto"
+  },
+  "distill": {
+    "maxTokens": 4000,
+    "includeLinks": true,
+    "includeImages": false,
+    "publisherMarkdown": true
+  },
+  "policy": {
+    "allow": [],
+    "deny": [],
+    "allowInteract": "auto",
+    "allowFileUrls": false
+  },
+  "limits": {
+    "maxSessionsPerDay": 100,
+    "maxTokensPerDay": 1000000
+  }
+}
