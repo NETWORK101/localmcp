@@ -3,7 +3,7 @@
 ## 0.3.0 — 2026-10-01
 
 ### Renamed
-- The package is now **`@network101/localmcp`** (previously `browsermcpai`, and `headlessdev` before that). Plain `localmcp` is too close to the existing `local-mcp` on npm, so it ships under the NETWORK101 scope. The command is still `localmcp`. MCP client configs: `npx -y @network101/localmcp`; Claude Code: `claude mcp add localmcp -- npx -y @network101/localmcp`.
+- The package is now **`@localmcpserv/localmcp`** (previously `browsermcpai`, and `headlessdev` before that). Plain `localmcp` is too close to the existing `local-mcp` on npm, so it ships under the NETWORK101 scope. The command is still `localmcp`. MCP client configs: `npx -y @localmcpserv/localmcp`; Claude Code: `claude mcp add localmcp -- npx -y @localmcpserv/localmcp`.
 - Everything from the old name keeps working: `.browsermcp.json` and `~/.config/browsermcp/config.json` are read when the new files don't exist, `~/.browsermcp` (saved logins, usage) is used when `~/.localmcp` doesn't exist, and `BROWSERMCP_NO_LIMIT` still overrides the circuit breaker. New names: `.localmcp.json`, `~/.config/localmcp/config.json`, `~/.localmcp`, `LOCALMCP_NO_LIMIT`.
 
 ### Added
