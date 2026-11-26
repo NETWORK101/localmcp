@@ -9,6 +9,11 @@ Usage:
   localmcp init            Create .localmcp.json and print setup for your MCP clients
   localmcp login [url] [--browser chromium|firefox|webkit]
                              Open a visible browser to sign in; the agent reuses the session
+  localmcp sites [list|add <host>|remove <host>]
+                             Which sites open with your saved login (everything else is signed out)
+  localmcp doctor          Check what the agent can reach as you; exits 1 on a risky setup
+  localmcp audit [--tail N] [--json]
+                             What the agent opened, with which session
   localmcp usage           Show today's and this week's usage
   localmcp --version       Print the version
 
@@ -31,6 +36,10 @@ if (command === 'init') {
     args.splice(flag, args[flag].includes('=') ? 1 : 2);
   }
   await runLogin(args[0], engine);
+} else if (command === 'sites' || command === 'doctor' || command === 'audit') {
+  const admin = await import('../src/cli/admin.js');
+  const run = { sites: admin.runSites, doctor: admin.runDoctor, audit: admin.runAudit }[command];
+  process.exitCode = run(process.argv.slice(3));
 } else if (command === 'usage') {
   const { UsageTracker } = await import('../src/cost/tracker.js');
   const tracker = new UsageTracker();

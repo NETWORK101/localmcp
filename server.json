@@ -1,18 +1,18 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.network101/localmcp",
-  "description": "A local, scoped, read-first browser for AI agents. Reads pages (including ones you're signed in to) as focused, token-budgeted markdown. Nothing is relayed through a cloud.",
+  "description": "A local, scoped, read-first browser for AI agents. Reads pages, including signed-in ones scoped per site, as token-budgeted markdown.",
   "repository": {
     "url": "https://github.com/NETWORK101/localmcp",
     "source": "github"
   },
-  "websiteUrl": "https://www.localmcp.dev",
-  "version": "0.3.1",
+  "websiteUrl": "https://network101.github.io/localmcp",
+  "version": "0.4.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@localmcp_serv/localmcp",
-      "version": "0.3.1",
+      "version": "0.4.0",
       "transport": {
         "type": "stdio"
       }

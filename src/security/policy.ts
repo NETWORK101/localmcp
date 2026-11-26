@@ -1,6 +1,7 @@
 import { existsSync } from 'fs';
 import type { LocalMcpConfig } from '../config/schema.js';
-import { profileDirFor } from '../browser/manager.js';
+import { profileDirFor, type SessionScope } from '../browser/manager.js';
+import { loadSites } from './sites.js';
 
 export type Policy = LocalMcpConfig['policy'];
 
@@ -78,31 +79,38 @@ export function fenceUntrusted(content: string, source: string): string {
 
 /** True when localmcp will read as the user: a saved login profile or an attached browser. */
 export function usesSignedInSession(browser: LocalMcpConfig['browser']): boolean {
-  if (browser.cdpEndpoint) return true;
-  if (browser.profile === 'persistent') return true;
-  if (browser.profile === 'auto') return existsSync(profileDirFor(browser.engine, browser.profileDir));
-  return false;
+  return sessionScope(browser) !== 'none';
+}
+
+/** Same answer as BrowserManager.scope, computed from config alone (for the CLI and `doctor`). */
+export function sessionScope(browser: LocalMcpConfig['browser']): SessionScope {
+  if (browser.cdpEndpoint) return 'all-hosts';
+  const dir = profileDirFor(browser.engine, browser.profileDir);
+  const persistent = browser.profile === 'persistent' || (browser.profile === 'auto' && existsSync(dir));
+  if (!persistent) return 'none';
+  return loadSites(dir).length > 0 ? 'scoped' : 'all-hosts';
 }
 
 export type InteractDecision = { allowed: true } | { allowed: false; reason: string };
 
+export const INTERACT_SIGNED_IN_REASON =
+  'interact is off for pages opened with your signed-in session (policy.allowInteract: "auto"). ' +
+  'To let the agent click and type as you, set "allowInteract": true in .localmcp.json.';
+
 /**
- * Resolve policy.allowInteract. "auto" keeps clicks and typing off whenever the agent would act
- * with the user's credentials — the combination vendors warn about (signed-in browser + injection).
+ * Resolve policy.allowInteract for the server as a whole. "auto" keeps clicks and typing off
+ * whenever the agent would act with the user's credentials — the combination vendors warn about
+ * (signed-in browser + injection). With a scoped profile, interact stays available and is refused
+ * per call for signed-in hosts only (see `interactAllowedFor`).
  */
-export function interactDecision(config: LocalMcpConfig): InteractDecision {
+export function interactDecision(config: LocalMcpConfig, scope: SessionScope = sessionScope(config.browser)): InteractDecision {
   const v = config.policy.allowInteract;
   if (v === true) return { allowed: true };
   if (v === false) {
     return { allowed: false, reason: 'interact is disabled by policy.allowInteract: false (read-only mode).' };
   }
-  if (!usesSignedInSession(config.browser)) return { allowed: true };
-  return {
-    allowed: false,
-    reason:
-      'interact is off while localmcp uses your signed-in session (policy.allowInteract: "auto"). ' +
-      'To let the agent click and type as you, set "allowInteract": true in .localmcp.json.',
-  };
+  if (scope === 'all-hosts') return { allowed: false, reason: INTERACT_SIGNED_IN_REASON };
+  return { allowed: true };
 }
 
 /** Deny rules apply to every request a page makes — subresources, iframes, fetch/XHR — not just navigation. */

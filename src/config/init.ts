@@ -3,6 +3,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { DEFAULT_CONFIG, ENGINES, loadConfig, type BrowserEngine } from './schema.js';
 import { browserTypeFor, launchOptions, profileDirFor } from '../browser/manager.js';
+import { addSite, loadSites } from '../security/sites.js';
 
 const SERVER_ENTRY = { command: 'npx', args: ['-y', '@localmcp_serv/localmcp'] };
 
@@ -92,7 +93,8 @@ export async function runInit(): Promise<void> {
   console.log(bold('\nRead pages you are signed in to'));
   console.log('  npx @localmcp_serv/localmcp login https://dashboard.stripe.com');
   console.log(dim('  Opens a browser on a private profile (~/.localmcp/profile). Sign in, close the window,'));
-  console.log(dim('  and your agent reuses that session. Or attach to your own Chrome with "cdpEndpoint".'));
+  console.log(dim('  and your agent reuses that session for that site only; other pages open signed out.'));
+  console.log(dim('  Check what the agent can reach as you with: npx @localmcp_serv/localmcp doctor'));
   console.log(bold('\nOther browsers'));
   console.log(dim('  "engine": "firefox" | "webkit" (Safari\'s engine) · "channel": "chrome" | "msedge"'));
   console.log(dim('  Non-Chromium engines need a one-time download: npx playwright install firefox webkit'));
@@ -132,10 +134,36 @@ export async function runLogin(url?: string, engineOverride?: string): Promise<v
     return;
   }
 
+  // Without a URL, every site the user navigates to in this window becomes a signed-in site.
+  const visited = new Set<string>();
+  const track = (p: import('playwright').Page) =>
+    p.on('framenavigated', (f) => {
+      if (f !== p.mainFrame()) return;
+      try {
+        const u = new URL(f.url());
+        if (u.protocol === 'https:' || u.protocol === 'http:') visited.add(u.hostname);
+      } catch {
+        /* about:blank and friends */
+      }
+    });
+  context.pages().forEach(track);
+  context.on('page', track);
+
   const page = context.pages()[0] ?? (await context.newPage());
   if (url) await page.goto(url).catch((e) => console.error(`Could not open ${url}: ${e.message}`));
 
   await new Promise<void>((resolve) => context.once('close', () => resolve()));
+
+  // Scope the profile: only these hosts open with the saved session; every other page is anonymous.
+  const recorded = (url ? [url] : [...visited]).map((h) => addSite(profileDir, h, 'login')).filter(Boolean) as string[];
+  const all = loadSites(profileDir).map((s) => s.host);
   const hint = engine === config.browser.engine ? '' : ` Set "browser": { "engine": "${engine}" } in .localmcp.json to use it.`;
-  console.log(`${green('✓')} Session saved. localmcp will use it automatically (browser.profile = "auto").${hint}\n`);
+  console.log(`${green('✓')} Session saved. localmcp will use it automatically (browser.profile = "auto").${hint}`);
+  if (recorded.length) {
+    console.log(`  Signed-in sites: ${all.join(', ')}`);
+    console.log(dim('  Only these open with your session. Widen one with `localmcp sites add "*.example.com"`.'));
+  } else {
+    console.log(dim('  No site was recorded. Add one with `localmcp sites add <host>`; until then every page opens signed in.'));
+  }
+  console.log('');
 }

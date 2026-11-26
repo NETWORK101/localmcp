@@ -2,6 +2,7 @@ import { chromium, firefox, webkit, Browser, BrowserContext, BrowserType, Page }
 import { existsSync } from "fs";
 import { PageWrapper } from "./page.js";
 import type { BrowserEngine, ProfileMode } from "../config/schema.js";
+import { isSignedInSite, loadSites, type SiteEntry } from "../security/sites.js";
 
 export interface BrowserManagerConfig {
   timeout: number;
@@ -15,6 +16,8 @@ export interface BrowserManagerConfig {
   blockRequest?: (url: string) => boolean;
   profileDir?: string;
   cdpEndpoint?: string;
+  /** Signed-in sites for the persistent profile. Defaults to the profile's localmcp-sites.json. */
+  sites?: SiteEntry[];
 }
 
 export interface GetPageOptions {
@@ -57,18 +60,34 @@ export function launchOptions(engine: BrowserEngine = "chromium", channel?: stri
 let signalHandlersInstalled = false;
 const liveManagers = new Set<BrowserManager>();
 
+/**
+ * How signed-in state is scoped for this manager.
+ * - "none":      no saved profile or attached browser — every page is anonymous.
+ * - "scoped":    a saved profile with registered sites; only those hosts open with it.
+ * - "all-hosts": an attached browser (CDP), or a pre-0.4 profile with no site list —
+ *                every page opens with the user's cookies.
+ */
+export type SessionScope = "none" | "scoped" | "all-hosts";
+export type Route = "signed-in" | "anonymous";
+
 export class BrowserManager {
   private browser: Browser | null = null;
   /** Shared, long-lived context for persistent-profile and CDP modes. */
   private sharedContext: BrowserContext | null = null;
+  private cdpBrowser: Browser | null = null;
   private contexts: Set<BrowserContext> = new Set();
   private config: BrowserManagerConfig;
-  private launching: Promise<void> | null = null;
-  private kind: SessionKind | null = null;
+  private launchingShared: Promise<void> | null = null;
+  private launchingBrowser: Promise<void> | null = null;
+  private sharedKind: "persistent" | "cdp" | null = null;
+  /** Set when the persistent profile couldn't be opened (locked by another process). */
+  private persistentFailed = false;
   private notices: string[] = [];
+  private sites: SiteEntry[];
 
   constructor(config?: Partial<BrowserManagerConfig>) {
     this.config = { ...DEFAULT_BROWSER_CONFIG, ...config };
+    this.sites = this.config.sites ?? (this.profilePath ? loadSites(this.profilePath) : []);
     liveManagers.add(this);
     if (!signalHandlersInstalled) {
       signalHandlersInstalled = true;
@@ -80,13 +99,34 @@ export class BrowserManager {
     }
   }
 
+  /** The anonymous browser (ephemeral contexts), once launched. */
   getBrowserInstance(): Browser | null {
     return this.browser;
   }
 
-  /** Which session mode is active (null until the first page is opened). */
+  /** The mode of the most capable session opened so far (null until the first page). */
   get sessionKind(): SessionKind | null {
-    return this.kind;
+    return this.sharedKind ?? (this.browser ? "ephemeral" : null);
+  }
+
+  get signedInSites(): readonly SiteEntry[] {
+    return this.sites;
+  }
+
+  get scope(): SessionScope {
+    if (this.config.cdpEndpoint) return "all-hosts";
+    if (!this.wantsPersistent()) return "none";
+    return this.sites.length > 0 ? "scoped" : "all-hosts";
+  }
+
+  /** Which session a URL would open in. Pure: decided from config, sites and earlier failures. */
+  routeFor(url: string): Route {
+    const scope = this.scope;
+    if (scope === "none") return "anonymous";
+    if (this.config.cdpEndpoint) return "signed-in";
+    if (this.persistentFailed) return "anonymous";
+    if (scope === "all-hosts") return "signed-in";
+    return isSignedInSite(url, this.sites) ? "signed-in" : "anonymous";
   }
 
   /** One-time notices (e.g. "profile locked, fell back to ephemeral") for surfacing to the agent. */
@@ -107,62 +147,75 @@ export class BrowserManager {
     return false;
   }
 
-  private async launch(): Promise<void> {
+  private async launchShared(): Promise<void> {
     const engine = this.config.engine ?? "chromium";
-    const type = browserTypeFor(engine);
-    const extra = launchOptions(engine, this.config.channel);
-
     if (this.config.cdpEndpoint) {
       if (engine !== "chromium") {
         throw new Error(`cdpEndpoint attaches to Chromium-based browsers only; browser.engine is "${engine}".`);
       }
       // Attach to the user's own Chrome: real cookies, real extensions, real sessions.
-      this.browser = await chromium.connectOverCDP(this.config.cdpEndpoint);
-      this.sharedContext = this.browser.contexts()[0] ?? (await this.browser.newContext());
-      this.kind = "cdp";
+      this.cdpBrowser = await chromium.connectOverCDP(this.config.cdpEndpoint);
+      this.sharedContext = this.cdpBrowser.contexts()[0] ?? (await this.cdpBrowser.newContext());
+      this.sharedKind = "cdp";
       return;
     }
-
-    if (this.wantsPersistent() && this.profilePath) {
-      try {
-        this.sharedContext = await type.launchPersistentContext(this.profilePath, {
-          headless: this.config.headless,
-          ...extra,
-        });
-        this.kind = "persistent";
-        return;
-      } catch (err) {
-        // Chromium locks a profile to one process. If another localmcp (or `localmcp login`)
-        // holds it, degrade to ephemeral rather than failing every call.
-        this.notices.push(
-          `Persistent profile unavailable (${(err as Error).message.split("\n")[0]}). ` +
-            `Using an ephemeral session — authenticated pages may show a login screen.`
-        );
-      }
+    try {
+      this.sharedContext = await browserTypeFor(engine).launchPersistentContext(this.profilePath!, {
+        headless: this.config.headless,
+        ...launchOptions(engine, this.config.channel),
+      });
+      this.sharedKind = "persistent";
+    } catch (err) {
+      // Chromium locks a profile to one process. If another localmcp (or `localmcp login`)
+      // holds it, degrade to anonymous rather than failing every call.
+      this.persistentFailed = true;
+      this.notices.push(
+        `Persistent profile unavailable (${(err as Error).message.split("\n")[0]}). ` +
+          `Using an ephemeral session — authenticated pages may show a login screen.`
+      );
     }
-
-    this.browser = await type.launch({ headless: this.config.headless, ...extra });
-    this.kind = "ephemeral";
   }
 
-  private async ensureLaunched(): Promise<void> {
-    if (this.browser || this.sharedContext) return;
-    // Concurrent tool calls must not race to launch two browsers.
-    this.launching ??= this.launch().finally(() => {
-      this.launching = null;
+  private async launchBrowser(): Promise<void> {
+    const engine = this.config.engine ?? "chromium";
+    this.browser = await browserTypeFor(engine).launch({
+      headless: this.config.headless,
+      ...launchOptions(engine, this.config.channel),
     });
-    await this.launching;
+  }
+
+  // Concurrent tool calls must not race to launch two browsers.
+  private async ensureShared(): Promise<void> {
+    if (this.sharedContext || this.persistentFailed) return;
+    this.launchingShared ??= this.launchShared().finally(() => {
+      this.launchingShared = null;
+    });
+    await this.launchingShared;
+  }
+
+  private async ensureBrowser(): Promise<void> {
+    if (this.browser) return;
+    this.launchingBrowser ??= this.launchBrowser().finally(() => {
+      this.launchingBrowser = null;
+    });
+    await this.launchingBrowser;
   }
 
   async getPage(url: string, opts?: GetPageOptions): Promise<PageWrapper> {
-    await this.ensureLaunched();
     const timeout = opts?.timeout ?? this.config.timeout;
+
+    let route = this.routeFor(url);
+    if (route === "signed-in") {
+      await this.ensureShared();
+      if (!this.sharedContext) route = "anonymous";
+    }
 
     let page: Page;
     let ownedContext: BrowserContext | null = null;
-    if (this.sharedContext) {
-      page = await this.sharedContext.newPage();
+    if (route === "signed-in") {
+      page = await this.sharedContext!.newPage();
     } else {
+      await this.ensureBrowser();
       ownedContext = await this.browser!.newContext();
       this.contexts.add(ownedContext);
       ownedContext.once("close", () => this.contexts.delete(ownedContext!));
@@ -174,8 +227,8 @@ export class BrowserManager {
         // Page-level (not context-level) routing: in CDP mode the context is the user's own
         // browser, and their other tabs must not be intercepted.
         const block = this.config.blockRequest;
-        await page.route('**/*', (route) =>
-          block(route.request().url()) ? route.abort('blockedbyclient') : route.continue()
+        await page.route('**/*', (r) =>
+          block(r.request().url()) ? r.abort('blockedbyclient') : r.continue()
         );
       }
       await navigate(page, url, timeout, opts?.waitFor);
@@ -184,7 +237,7 @@ export class BrowserManager {
       throw err;
     }
 
-    return new PageWrapper(page, ownedContext, timeout);
+    return new PageWrapper(page, ownedContext, timeout, route === "signed-in");
   }
 
   async cleanup(): Promise<void> {
@@ -194,16 +247,21 @@ export class BrowserManager {
     this.contexts.clear();
 
     // In CDP mode the browser belongs to the user — disconnect, never close their context.
-    if (this.sharedContext && this.kind !== "cdp") {
+    if (this.sharedContext && this.sharedKind !== "cdp") {
       await this.sharedContext.close().catch(() => {});
     }
     this.sharedContext = null;
+    if (this.cdpBrowser) {
+      await this.cdpBrowser.close().catch(() => {});
+      this.cdpBrowser = null;
+    }
 
     if (this.browser) {
       await this.browser.close().catch(() => {});
       this.browser = null;
     }
-    this.kind = null;
+    this.sharedKind = null;
+    this.persistentFailed = false;
     liveManagers.delete(this);
   }
 }

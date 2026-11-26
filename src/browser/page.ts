@@ -12,11 +12,14 @@ export class PageWrapper {
   /** Set only when this wrapper owns a throwaway context (ephemeral mode). */
   private context: BrowserContext | null;
   private timeout: number;
+  /** True when this page was opened with the user's saved login or attached browser. */
+  readonly signedIn: boolean;
 
-  constructor(page: Page, context: BrowserContext | null, timeout: number) {
+  constructor(page: Page, context: BrowserContext | null, timeout: number, signedIn = false) {
     this.page = page;
     this.context = context;
     this.timeout = timeout;
+    this.signedIn = signedIn;
   }
 
   async goto(url: string): Promise<void> {

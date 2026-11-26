@@ -99,7 +99,7 @@ describe('CLI binary (end to end)', () => {
     const r = await new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
       const child = spawn(process.execPath, [path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs'), path.join(root, 'bin', 'localmcp.ts'), 'read', base, '--max-tokens', '300'], {
         cwd: home,
-        env: { ...process.env, HOME: home, USERPROFILE: home, PLAYWRIGHT_BROWSERS_PATH: browsers },
+        env: { ...process.env, LOCALMCP_HOME: "", HOME: home, USERPROFILE: home, PLAYWRIGHT_BROWSERS_PATH: browsers },
       });
       let stdout = '';
       let stderr = '';

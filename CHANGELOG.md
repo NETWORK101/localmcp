@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.4.0 — 2026-11-25
+
+Signed in, but scoped, now covers *where* the agent reads as you, not just whether it can click.
+
+### Security
+- **Signed-in sites.** `localmcp login <url>` records that host in `localmcp-sites.json` inside the profile. Only those hosts open with the saved profile; every other URL opens in a throwaway context with no cookies. In 0.3 a third-party page opened in the profile could make credentialed requests to your signed-in sites; a regression test now shows 0.3's exposure and 0.4's fix side by side.
+- **Egress guard (`policy.egress`, default `"confirm"`).** After the agent reads a page with your session, opening a host that isn't a signed-in site, in `policy.allow`, or already approved asks you first through MCP elicitation. Hosts the agent read *before* the signed-in read aren't trusted, since the injected page is usually read first. Clients without elicitation get a refusal naming the fix. `"block"` refuses outright; `"open"` restores 0.3.
+- **Redaction (`policy.redactSecrets`, default on).** API keys (Stripe, OpenAI, Anthropic, GitHub, npm, Slack, AWS, Google), JWTs, private key blocks and Luhn-valid card numbers are replaced with labelled stubs in text and `structuredContent`. Screenshots taken with your session carry a note that images aren't redacted.
+- **Audit log.** `~/.localmcp/audit.jsonl` (mode 600) gets one line per call, refusals included: tool, host, path, session, outcome, redactions. Query strings and fragments are never logged.
+- **`interact` per host.** With a scoped profile, `interact` stays listed and works on anonymous pages; it's refused on signed-in ones unless `allowInteract: true`.
+- **Supply chain.** Releases publish with npm Trusted Publishing (OIDC, provenance) instead of a long-lived `NPM_TOKEN`, then publish `server.json` to the MCP registry. Actions are pinned to commit SHAs, CI runs `npm audit signatures` and fails on high/critical advisories, and Dependabot proposes updates after a 7-day cooldown.
+
+### Added
+- `localmcp sites [list|add <host>|remove <host>]`, `localmcp doctor` (posture check, exit 1 on a risky setup), `localmcp audit [--tail N] [--json]`.
+- `LOCALMCP_HOME` relocates all state (profile, usage, audit).
+
+### Changed
+- Playwright 1.65, MCP SDK 1.32, better-sqlite3 12: `npm audit --omit=dev` is clean (10 findings in 0.3.1, 1 critical). CI tests Node 20, 22 and 24 on ubuntu-24.04 (`ubuntu-latest` moved to 26.04, which Playwright 1.48 refused).
+- `server.json` points at the live site instead of the parked localmcp.dev.
+
+### Upgrading
+Profiles created before 0.4 have no site list and keep working exactly as before: every page opens signed in. Each run says so once. Run `localmcp sites add <host>` for the sites you signed in to, or `localmcp login <url>` again, to scope it. `localmcp doctor` checks the result.
+
 ## 0.3.1 — 2026-10-12
 
 First release on npm. The package ships under the **`@localmcp_serv`** scope: `npx -y @localmcp_serv/localmcp`; Claude Code: `claude mcp add localmcp -- npx -y @localmcp_serv/localmcp`. (0.3.0's notes named `@network101/localmcp`; that scope was never registered on npm, so nothing was published under it.) The MCP registry name stays `io.github.network101/localmcp`, which follows the GitHub org.

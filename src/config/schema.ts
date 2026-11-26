@@ -47,6 +47,21 @@ export interface LocalMcpConfig {
     allowInteract: boolean | 'auto';
     /** Allow file:// URLs. Off by default — local files are rarely what an agent should read via a browser. */
     allowFileUrls: boolean;
+    /**
+     * What may happen after the agent has read a page with your signed-in session.
+     * A prompt-injected page can tell the agent to carry what it read to another host in a URL.
+     * - "confirm" (default): opening a host that isn't a signed-in site, in `allow`, or already
+     *   approved asks you first (MCP elicitation); clients that can't ask get a refusal.
+     * - "block": refuse such hosts outright. "open": no check (the 0.3 behaviour).
+     */
+    egress: 'confirm' | 'block' | 'open';
+    /** Replace API keys, tokens, private keys and card numbers in tool output. On by default. */
+    redactSecrets: boolean;
+  };
+  audit: {
+    /** Append one JSON line per tool call (host, path without query, session, outcome) to `path`. */
+    enabled: boolean;
+    path: string;
   };
   limits: {
     maxSessionsPerDay: number;
@@ -63,7 +78,8 @@ export function resolveStateDir(home: string = homedir()): string {
   const prev = join(home, '.browsermcp');
   return existsSync(next) || !existsSync(prev) ? next : prev;
 }
-export const STATE_DIR = resolveStateDir();
+/** LOCALMCP_HOME relocates all state (profile, usage, audit log), e.g. per project or in tests. */
+export const STATE_DIR = process.env.LOCALMCP_HOME || resolveStateDir();
 
 export const DEFAULT_CONFIG: LocalMcpConfig = {
   browser: {
@@ -74,7 +90,8 @@ export const DEFAULT_CONFIG: LocalMcpConfig = {
     profileDir: join(STATE_DIR, 'profile'),
   },
   distill: { maxTokens: 4000, includeLinks: true, includeImages: false, publisherMarkdown: true },
-  policy: { allow: [], deny: [], allowInteract: 'auto', allowFileUrls: false },
+  policy: { allow: [], deny: [], allowInteract: 'auto', allowFileUrls: false, egress: 'confirm', redactSecrets: true },
+  audit: { enabled: true, path: join(STATE_DIR, 'audit.jsonl') },
   limits: { maxSessionsPerDay: 100, maxTokensPerDay: 1_000_000 },
 };
 
@@ -86,6 +103,7 @@ function deepMerge(base: LocalMcpConfig, override: DeepPartial<LocalMcpConfig>):
     distill: { ...base.distill, ...override.distill },
     policy: { ...base.policy, ...override.policy },
     limits: { ...base.limits, ...override.limits },
+    audit: { ...base.audit, ...override.audit },
   };
 }
 

@@ -2,6 +2,7 @@ import { BrowserManager } from '../browser/manager.js';
 import { distill } from '../distill/pipeline.js';
 import { diffMarkdown } from '../distill/differ.js';
 import { estimateTokens } from '../distill/token-counter.js';
+import { redactSecrets } from '../security/redact.js';
 import { defaultContext, errorMessage, errorResult, landedOutsidePolicy, renderPage, type ToolContext, type ToolResult } from './common.js';
 
 export interface BrowseArgs {
@@ -77,6 +78,8 @@ function diffResult(
     return errorResult('Diff mode needs the usage store (not available in this context).');
   }
   const previous = ctx.tracker.getSnapshot(url);
+  // Snapshots persist in usage.db and are served as MCP resources: never store credentials in them.
+  if (ctx.config.policy.redactSecrets !== false) result.fullMarkdown = redactSecrets(result.fullMarkdown).text;
   ctx.tracker.saveSnapshot(url, result.fullMarkdown, estimateTokens(result.fullMarkdown));
 
   if (!previous) {

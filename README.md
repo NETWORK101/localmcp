@@ -132,7 +132,7 @@ Password values are never echoed back. If an action navigates to a host your pol
 npx @localmcp_serv/localmcp login https://dashboard.stripe.com
 ```
 
-A browser window opens on `~/.localmcp/profile`. Sign in to whatever your agent should read, then close the window. With the default `browser.profile: "auto"`, localmcp uses that profile from then on. Chromium locks a profile to one process. If two clients run localmcp at once, the second one falls back to an ephemeral session and says so in its output.
+A browser window opens on `~/.localmcp/profile`. Sign in, then close the window. localmcp records `dashboard.stripe.com` as a **signed-in site**: from then on only that host opens with the saved profile, and every other page opens in a throwaway context with no cookies. A page elsewhere can't load your dashboard with your session, and reading a random page never happens as you. Run `login` again for more sites, or manage the list with `localmcp sites add "*.stripe.com"` / `sites remove`. (Run `login` with no URL and every site you visit in that window is recorded.) Chromium locks a profile to one process. If two clients run localmcp at once, the second one falls back to an ephemeral session and says so in its output.
 
 **Option B: your own Chrome**
 
@@ -144,7 +144,9 @@ Start Chrome with `--remote-debugging-port=9222`, then:
 
 localmcp opens its own tabs in your existing session and never closes your browser.
 
-> Either way the agent can read anything those sessions can. So while a signed-in session is in use, `interact` is **off by default** (`policy.allowInteract: "auto"`): the agent reads as you but can't click or type as you until you set `allowInteract: true`. Pair this with `policy.allow` (below).
+An attached browser has no site list: every page opens with your cookies, so set `policy.allow` to the hosts the agent needs. The same holds for a profile created before 0.4; results say so once per run until you run `localmcp sites add <host>`.
+
+> **Signed in, but scoped.** With `policy.allowInteract: "auto"` (the default) the agent reads signed-in pages but can't click or type on them; `interact` still works on anonymous pages. After the agent reads a page with your session, opening a host that isn't a signed-in site, in `policy.allow`, or already approved **asks you first** (MCP elicitation). That's the step a prompt injection needs to carry what it read somewhere else in a URL. Clients that can't ask get a refusal that names the fix. Run `npx @localmcp_serv/localmcp doctor` to see what the agent can reach as you.
 
 ## Browsers
 
@@ -184,8 +186,13 @@ Firefox and WebKit need a one-time `npx playwright install firefox webkit`. Sign
   "policy": {
     "allow": [],                  // host globs; empty = any. e.g. ["*.stripe.com", "localhost:*"]
     "deny": [],                   // checked first
-    "allowInteract": "auto",      // "auto": off while signed in · true · false (read-only)
-    "allowFileUrls": false
+    "allowInteract": "auto",      // "auto": off on signed-in pages · true · false (read-only)
+    "allowFileUrls": false,
+    "egress": "confirm",          // after a signed-in read, new hosts: "confirm" · "block" · "open"
+    "redactSecrets": true         // strip API keys, tokens, private keys, card numbers from output
+  },
+  "audit": {
+    "enabled": true               // one JSON line per call in ~/.localmcp/audit.jsonl (no query strings)
   },
   "limits": {
     "maxSessionsPerDay": 100,     // local circuit breaker against runaway agents
@@ -201,6 +208,10 @@ Host globs: `example.com` (exact host, any port), `*.example.com` (subdomains, n
 - **Nothing is relayed.** Pages are fetched and distilled by a browser on your machine, then go only to the model your agent already uses. No telemetry, no account.
 - **Policy at the boundary.** Every URL is checked before a browser is touched, and again after redirects or actions that change origin. Deny rules also apply to every request a page makes — images, iframes, scripts, fetches — including when attached to your own browser. Only `http(s)` is allowed by default; `file:`, `javascript:`, `chrome:`, `data:` are refused.
 - **Prompt-injection fence.** Page content comes back inside `<untrusted-page-content>` tags, and the server's `instructions` tell the model to treat it as data. Pages that try to close the fence early are neutralised. This *reduces* injection risk; it doesn't eliminate it. Keep `interact` confirmations on in your client.
+- **Session routing.** A saved login opens only its signed-in sites; everything else opens with no cookies, so third-party pages can't ride your session.
+- **Egress guard.** After a signed-in read, new hosts need your approval (`policy.egress`).
+- **Redaction.** Stripe, OpenAI, Anthropic, GitHub, npm, Slack, AWS and Google keys, JWTs, private key blocks and Luhn-valid card numbers are replaced with labelled stubs (`sk_live_[redacted stripe-key]`) in text and `structuredContent`. Screenshots are images and aren't redacted; signed-in screenshots say so.
+- **Audit log.** `localmcp audit` lists every call: tool, host, path (queries and fragments dropped), signed-in or anonymous, outcome, redactions.
 - **Circuit breaker.** Daily session and token caps (local SQLite at `~/.localmcp/usage.db`). `npx @localmcp_serv/localmcp usage` shows totals. `LOCALMCP_NO_LIMIT=1` overrides.
 
 ## MCP protocol surface
@@ -213,6 +224,7 @@ Host globs: `example.com` (exact host, any port), `*.example.com` (subdomains, n
 | `notifications/progress` (when the client sends a `progressToken`) | ✓ |
 | `sampling/createMessage` (used by `extract` when the client supports it) | ✓ |
 | `resources` — diff snapshots at `localmcp://snapshot/{url}` | ✓ |
+| `elicitation/create` (approve a new host after a signed-in read) | ✓ |
 | Transport | stdio |
 
 ## CLI
@@ -220,7 +232,10 @@ Host globs: `example.com` (exact host, any port), `*.example.com` (subdomains, n
 ```
 localmcp                 Start the MCP server on stdio
 localmcp init            Create .localmcp.json and print setup for your MCP clients
-localmcp login [url]     Sign in once on the persistent profile
+localmcp login [url]     Sign in once; records the site as signed in
+localmcp sites [list|add <host>|remove <host>]
+localmcp doctor          What the agent can reach as you (exit 1 on a risky setup)
+localmcp audit [--tail N] [--json]
 localmcp usage           Today's and this week's usage
 localmcp --version
 ```
