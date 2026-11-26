@@ -25,11 +25,11 @@ const RULES: Rule[] = [
   { label: 'aws-access-key', re: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, keep: 4 },
   { label: 'google-api-key', re: /\bAIza[0-9A-Za-z_-]{35}\b/g, keep: 4 },
   { label: 'jwt', re: /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, keep: 0 },
-  // Card-shaped only: IIN 3–6, then 13–19 contiguous digits, 4-4-4-4(-3) or Amex 4-6-5 with one
+  // Card-shaped only: IIN 2[2-7] (Mastercard 2-series) or 3–6, then 13–19 contiguous digits, 4-4-4-4(-3) or Amex 4-6-5 with one
   // consistent separator. Dates, timestamps (start with 1) and phone numbers don't fit.
   {
     label: 'card-number',
-    re: /\b(?:[3-6]\d{12,18}|[3-6]\d{3}([ -])\d{4}\1\d{4}\1\d{1,7}|3[47]\d{2}([ -])\d{6}\2\d{5})\b/g,
+    re: /\b(?:(?:2[2-7]|[3-6]\d)\d{11,17}|(?:2[2-7]|[3-6]\d)\d{2}([ -])\d{4}\1\d{4}\1\d{1,7}|3[47]\d{2}([ -])\d{6}\2\d{5})\b/g,
     keep: 0,
     check: luhn,
   },
@@ -86,8 +86,10 @@ function redactPrivateKeys(input: string, found: Record<string, number>): string
       if (KEY_TAIL_RE.test(input)) stop = KEY_TAIL_RE.lastIndex;
     }
     if (stop === -1 || input.slice(bodyStart, nextEnd).includes('-----BEGIN ')) {
-      stop = bodyStart;
-      while (stop < input.length && /[A-Za-z0-9+/=\s]/.test(input[stop])) stop++;
+      // Unterminated: PEM headers (Proc-Type, DEK-Info) and blank lines can sit before the
+      // base64, so no run-length rule is safe. Drop everything to the next BEGIN or the end.
+      const again = input.indexOf('-----BEGIN ', bodyStart);
+      stop = again === -1 ? input.length : again;
     }
     out += input.slice(pos, start) + '[redacted private-key]';
     found['private-key'] = (found['private-key'] ?? 0) + 1;

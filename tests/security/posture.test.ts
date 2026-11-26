@@ -105,6 +105,23 @@ beforeAll(async () => {
       res.writeHead(302, { location: '/go' }); // same-site hop first: the browser follows it unrouted
       return res.end();
     }
+    if (url === '/loop') {
+      res.writeHead(302, { location: '/loop' });
+      return res.end();
+    }
+    if (url === '/popup') {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end(`<title>Popup</title><main><h1>Popup</h1><a id="ext" target="_blank" href="http://127.0.0.1:${port}/landed?d=stolen-blank">x</a>
+        <script>window.open("http://127.0.0.1:${port}/landed?d=stolen-popup")</script></main>`);
+    }
+    if (url === '/form') {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end(`<title>Form</title><main><h1>Form</h1><form method="post" action="/post"><input name="q" value="1"><button id="send">Send</button></form></main>`);
+    }
+    if (url === '/post') {
+      res.writeHead(302, { location: `http://127.0.0.1:${port}/landed?d=stolen-post` });
+      return res.end();
+    }
     if (url === '/jsgo') {
       res.writeHead(200, { 'content-type': 'text/html' });
       return res.end(`<title>JS</title><script>location.href = "http://127.0.0.1:${port}/landed?d=stolen-js"</script>`);
@@ -385,6 +402,42 @@ describe('review findings (2026-11-25): each one stays fixed', () => {
     expect(manager.routeFor(stranger('/'))).toBe('signed-in');
     removeSite(profileDir, '127.0.0.1');
     expect(manager.routeFor(stranger('/'))).toBe('anonymous');
+  });
+});
+
+describe('second review (2026-11-25): navigation guard fails closed', () => {
+  const leaked = (tag: string) => cookieSeen.some((h) => h.path.includes(tag));
+
+  it('an endless redirect chain is blocked, not waved through', async () => {
+    const { client } = await connect(scopedConfig());
+    await client.callTool({ name: 'browse', arguments: { url: signedIn('/echo') } });
+    const r = await client.callTool({ name: 'browse', arguments: { url: signedIn('/loop') } });
+    expect(r.isError).toBe(true);
+    expect(texts(r)).toMatch(/redirects/);
+  });
+
+  it('popups and target=_blank links never open', async () => {
+    const { client } = await connect(scopedConfig({ allowInteract: true }));
+    await client.callTool({ name: 'browse', arguments: { url: signedIn('/echo') } });
+    cookieSeen.length = 0;
+    await client.callTool({ name: 'interact', arguments: { url: signedIn('/popup'), actions: [{ type: 'click', selector: '#ext' }, { type: 'wait', value: '300' }] } });
+    expect(leaked('stolen-popup')).toBe(false);
+    expect(leaked('stolen-blank')).toBe(false);
+  });
+
+  it('a form post that redirects off-site is stopped, and the post is sent exactly once', async () => {
+    const { client } = await connect(scopedConfig({ allowInteract: true }));
+    await client.callTool({ name: 'browse', arguments: { url: signedIn('/echo') } });
+    cookieSeen.length = 0;
+    await client.callTool({ name: 'interact', arguments: { url: signedIn('/form'), actions: [{ type: 'click', selector: '#send' }, { type: 'wait', value: '300' }] } });
+    expect(cookieSeen.filter((h) => h.path === '/post')).toHaveLength(1);
+    expect(leaked('stolen-post')).toBe(false);
+  });
+
+  it('unterminated encrypted PEM blocks and Mastercard 2-series numbers are redacted', () => {
+    const pem = ['-----BEGIN', 'RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,ABCDEF\n\nMIIEpAIBAAKCAQEA'].join(' ');
+    expect(redactSecrets(`x ${pem}`).text).toBe('x [redacted private-key]');
+    expect(redactSecrets('card 2223 0031 2200 3222').text).toContain('[redacted card-number…3222]');
   });
 });
 

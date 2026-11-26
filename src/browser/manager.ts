@@ -263,26 +263,29 @@ export class BrowserManager {
           const req = r.request();
           if (block?.(req.url())) return r.abort('blockedbyclient');
           const isMain = req.isNavigationRequest() && req.frame() === page.mainFrame();
-          if (isMain && vetted === req.url()) {
-            vetted = null;
-            const reason = guard?.active() ? await this.walkNavigation(r, guard.check, true) : null;
-            if (reason) {
-              this.lastBlocked = reason;
-              this.notices.push(`A navigation was stopped: ${reason}`);
-              return r.abort('blockedbyclient');
-            }
-            return r.continue();
+          const skipFirst = isMain && vetted === req.url();
+          if (skipFirst) vetted = null;
+          if (!isMain || !guard?.active()) return r.continue();
+          const verdict = await this.guardNavigation(r, guard.check, skipFirst);
+          if ('block' in verdict) {
+            this.lastBlocked = verdict.block;
+            this.notices.push(`A navigation was stopped: ${verdict.block}`);
+            return r.abort('blockedbyclient');
           }
-          if (guard?.active() && isMain) {
-            const reason = await this.walkNavigation(r, guard.check);
-            if (reason) {
-              this.lastBlocked = reason;
-              this.notices.push(`A navigation was stopped: ${reason}`);
-              return r.abort('blockedbyclient');
-            }
-          }
-          return r.continue();
+          return 'response' in verdict ? r.fulfill({ response: verdict.response }) : r.continue();
         });
+        if (guard) {
+          // Popups get a fresh page this handler doesn't cover, and their first request can leave
+          // before a route could be attached. Agents read one page per call, so don't open any.
+          await page.addInitScript(() => {
+            window.open = () => null;
+            document.addEventListener('click', (e) => {
+              const a = (e.target as Element | null)?.closest?.('a[target], form[target]') as HTMLAnchorElement | null;
+              if (a) a.target = '_self';
+            }, true);
+          });
+          page.on('popup', (p) => void p.close().catch(() => {}));
+        }
       }
       this.lastBlocked = null;
       await navigate(page, url, timeout, opts?.waitFor);
@@ -296,30 +299,57 @@ export class BrowserManager {
   }
 
   /**
-   * Server redirects never reach the route handler (Chromium follows them internally), so for a
-   * GET we fetch hop by hop without following and check each Location before letting the
-   * browser navigate for real. Non-GET navigations (form posts) are checked on their URL only;
-   * replaying them would submit twice.
+   * Server redirects never reach the route handler (Chromium follows them internally), so the
+   * guard fetches hop by hop without following and checks each Location first. Fails closed:
+   * a fetch error or an over-long chain blocks.
+   *
+   * - No redirect: the checked response itself is served (one request, nothing to re-follow).
+   * - GET with redirects: every hop is checked, then the browser navigates for real.
+   * - Non-GET (form posts): sent once; the response is served after checking its Location, and
+   *   any GET hops after a 301/302/303 are walked too. 307/308 would resend the body, so they
+   *   are only followed within the same origin.
    */
-  private async walkNavigation(
+  private async guardNavigation(
     r: import("playwright").Route,
     check: (url: string) => string | null,
-    skipFirst = false
-  ): Promise<string | null> {
-    let current = r.request().url();
-    const first = skipFirst ? null : check(current);
-    if (first || r.request().method() !== "GET") return first;
-    for (let hop = 0; hop < MAX_REDIRECTS; hop++) {
-      const res = await r.fetch({ url: current, maxRedirects: 0 }).catch(() => null);
-      if (!res) return null;
-      const location = res.headers()["location"];
-      await res.dispose().catch(() => {});
-      if (res.status() < 300 || res.status() >= 400 || !location) return null;
-      current = new URL(location, current).href;
-      const reason = check(current);
-      if (reason) return reason;
+    skipFirst: boolean
+  ): Promise<{ block: string } | { response: import("playwright").APIResponse } | { continue: true }> {
+    const req = r.request();
+    let current = req.url();
+    if (!skipFirst) {
+      const first = check(current);
+      if (first) return { block: first };
     }
-    return null;
+    const fetchHop = (url: string, original: boolean) =>
+      r.fetch(original ? { maxRedirects: 0 } : { url, method: "GET", postData: undefined, maxRedirects: 0 }).catch(() => null);
+
+    const firstRes = await fetchHop(current, true);
+    if (!firstRes) return { block: `couldn't verify where ${new URL(current).host} redirects, so the navigation was stopped.` };
+    let res = firstRes;
+    for (let hop = 0; ; hop++) {
+      const location = res.headers()["location"];
+      const status = res.status();
+      if (status < 300 || status >= 400 || !location) {
+        if (res === firstRes) return { response: firstRes };
+        await res.dispose().catch(() => {});
+        return req.method() === "GET" ? { continue: true } : { response: firstRes };
+      }
+      if (hop >= MAX_REDIRECTS) return { block: `more than ${MAX_REDIRECTS} redirects from ${new URL(req.url()).host}.` };
+      const next = new URL(location, current).href;
+      const reason = check(next);
+      if (reason) return { block: reason };
+      if (req.method() !== "GET" && res === firstRes && (status === 307 || status === 308)) {
+        if (new URL(next).origin !== new URL(current).origin) {
+          return { block: `a ${status} redirect would resend form data to ${new URL(next).host}.` };
+        }
+        return { response: firstRes };
+      }
+      if (res !== firstRes) await res.dispose().catch(() => {});
+      current = next;
+      const nextRes = await fetchHop(current, false);
+      if (!nextRes) return { block: `couldn't verify where ${new URL(current).host} redirects, so the navigation was stopped.` };
+      res = nextRes;
+    }
   }
 
   async cleanup(): Promise<void> {
