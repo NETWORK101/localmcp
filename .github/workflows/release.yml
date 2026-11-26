@@ -6,26 +6,50 @@ on:
 
 permissions:
   contents: read
-  id-token: write # npm provenance
 
 jobs:
-  publish:
-    runs-on: ubuntu-latest
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+  npm:
+    runs-on: ubuntu-24.04
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # npm Trusted Publishing (OIDC) + provenance; no NPM_TOKEN secret
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: 22
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24 # ships npm 11, which Trusted Publishing requires (>= 11.5.1)
           registry-url: https://registry.npmjs.org
           cache: npm
       - run: npm ci
+      - run: npm audit signatures
       - run: npx playwright install --with-deps chromium
       - run: npm test
-      - name: Publish
-        if: env.NODE_AUTH_TOKEN != ''
-        run: npm publish --provenance --access public
-      - name: Skip (no NPM_TOKEN)
-        if: env.NODE_AUTH_TOKEN == ''
-        run: echo "::warning::NPM_TOKEN secret not set — add it under Settings → Secrets → Actions, then re-run this workflow."
+      - name: Tag matches package.json
+        if: github.event_name == 'release'
+        run: test "v$(node -p 'require("./package.json").version')" = "${{ github.event.release.tag_name }}"
+      - name: Publish (Trusted Publishing, provenance attached automatically)
+        run: npm publish --access public
+
+  mcp-registry:
+    needs: npm
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write # GitHub OIDC login for the io.github.network101/* namespace
+    env:
+      MCP_PUBLISHER_VERSION: v1.8.16
+      MCP_PUBLISHER_SHA256: 6e2f799550cf843c6fd3350498d56cc49be3dc0af1e6237eb0e6435c7a9d5c05
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install mcp-publisher (checksum-pinned)
+        run: |
+          curl -sSL -o mcp-publisher.tgz "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${MCP_PUBLISHER_SHA256}  mcp-publisher.tgz" | sha256sum -c -
+          tar xzf mcp-publisher.tgz mcp-publisher
+      - run: ./mcp-publisher login github-oidc
+      - run: ./mcp-publisher publish

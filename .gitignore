@@ -15,3 +15,40 @@ packages/*/dist
 # local research artifacts, not part of the project
 headlessdev-*
 flow-experience-design-*.html
+# >>> secrets-hygiene (managed block — edit via ~/.claude/skills/secrets-hygiene) >>>
+# Environment files — keep committable templates only
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+# Local Cloudflare/wrangler state (local D1, KV, R2 copies)
+.wrangler/
+# Keys, certificates, keystores
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+id_ecdsa*
+# Credential files
+secrets.json
+secrets.*.json
+credentials.json
+*-credentials.json
+service-account*.json
+.netrc
+# Local backups of env files (e.g. .env.save, .env.bak)
+*.env.save
+*.env.bak
+# Claude Code per-machine settings
+.claude/settings.local.json
+# OS noise
+.DS_Store
+# <<< secrets-hygiene <<<
