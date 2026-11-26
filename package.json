@@ -65,7 +65,7 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.0",
     "@types/jsdom": "^28.0.3",
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.6.6",
     "@types/turndown": "^5.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0",
