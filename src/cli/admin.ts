@@ -33,17 +33,21 @@ export function runSites(argv: string[], config: LocalMcpConfig = loadConfig()):
     if (sub === 'add') {
       const host = addSite(dir, target, 'manual');
       if (!host) {
-        console.error(`"${target}" isn't a host name or http(s) URL.`);
+        console.error(
+          target.trim().startsWith('*.')
+            ? `"${target}" would cover sites run by other people (a public suffix). Use a narrower pattern such as "*.stripe.com".`
+            : `"${target}" isn't a host name or http(s) URL.`
+        );
         return 1;
       }
-      console.log(`Added ${host}. Restart your MCP client for a running server to pick it up.`);
+      console.log(`Added ${host}. A running server picks it up on its next call.`);
       return 0;
     }
     if (!removeSite(dir, target)) {
       console.error(`${target} isn't in ${sitesPath(dir)}.`);
       return 1;
     }
-    console.log(`Removed ${target}. Its cookies are still in the profile; sign out on the site to end the session.`);
+    console.log(`Removed ${target}; it now opens signed out. Its cookies stay in the profile until you sign out on the site.`);
     return 0;
   }
   if (sub !== 'list') {

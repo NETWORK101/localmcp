@@ -45,9 +45,29 @@ export interface RunHooks extends Pick<ToolContext, 'sample'> {
 }
 
 export function createRuntime(config: LocalMcpConfig, tracker: UsageTracker = new UsageTracker()): Runtime {
-  const browserManager = new BrowserManager({
+  // The guard and the manager reference each other: the guard asks which sites are signed in,
+  // the manager asks the guard about every navigation hop once it is armed.
+  let browserManager: BrowserManager;
+  const egress = new EgressGuard(
+    config.policy,
+    () => browserManager.signedInSites,
+    () => browserManager.scope
+  );
+  browserManager = new BrowserManager({
     ...config.browser,
     blockRequest: config.policy.deny.length ? (url) => isDeniedRequest(url, config.policy) : undefined,
+    navigationGuard: {
+      active: () => egress.armed,
+      check: (url) => {
+        const d = egress.check(url);
+        if (d.ok) return null;
+        return (
+          `a redirect or script tried to take the page to ${d.host} after a signed-in read of ${egress.signedInSource}. ` +
+          `That's how an injected link carries data off a site, so it was stopped before the request left. ` +
+          `If ${d.host} is expected (a sign-in provider, say), add "${new URL(url).hostname}" to policy.allow.`
+        );
+      },
+    },
   });
   return {
     config,
@@ -55,7 +75,7 @@ export function createRuntime(config: LocalMcpConfig, tracker: UsageTracker = ne
     browserManager,
     breaker: new CircuitBreaker(tracker, config.limits),
     interact: interactDecision(config, browserManager.scope),
-    egress: new EgressGuard(config.policy, browserManager.signedInSites),
+    egress,
     audit: new AuditLog(config.audit?.enabled === false ? null : (config.audit?.path ?? null)),
     postureShown: false,
   };
@@ -73,14 +93,17 @@ function postureNotice(rt: Runtime): string | null {
 }
 
 function redactResult(result: ToolResult): number {
+  const residual: Record<string, number> = {};
+  for (const item of result.content) {
+    if (item.type === 'text') item.text = redactSecrets(item.text).text;
+  }
+  if (result.structuredContent) result.structuredContent = redactDeep(result.structuredContent, residual);
+  // distill() already redacted page text before truncation; count every stub in what goes out.
   const found: Record<string, number> = {};
   for (const item of result.content) {
     if (item.type !== 'text') continue;
-    const r = redactSecrets(item.text);
-    item.text = r.text;
-    for (const [k, n] of Object.entries(r.found)) found[k] = (found[k] ?? 0) + n;
+    for (const m of item.text.matchAll(/\[redacted ([a-z-]+?)(?:…\d{4})?\]/g)) found[m[1]] = (found[m[1]] ?? 0) + 1;
   }
-  if (result.structuredContent) result.structuredContent = redactDeep(result.structuredContent, found);
   const note = describeRedactions(found);
   if (note) result.content.push({ type: 'text', text: `_Note: ${note}_` });
   return Object.values(found).reduce((a, b) => a + b, 0);
@@ -157,6 +180,8 @@ export async function runTool(
   if (!check.allowed) {
     return refuse(check.message!);
   }
+  // Arm before the call runs, so a concurrent call can't leave while this read is in flight.
+  if (route === 'signed-in') rt.egress.arm(args.url);
 
   const ctx: ToolContext = {
     config: rt.config,
@@ -186,7 +211,6 @@ export async function runTool(
 
   // Ask again after the call: a locked profile degrades signed-in routes to anonymous.
   const signedIn = rt.browserManager.routeFor(args.url) === 'signed-in';
-  if (!result.isError) rt.egress.noteRead(args.url, signedIn);
 
   const redactions = rt.config.policy.redactSecrets === false ? 0 : redactResult(result);
   if (signedIn && tool === 'screenshot' && !result.isError) {

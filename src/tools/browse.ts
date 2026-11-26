@@ -36,6 +36,7 @@ export async function handleBrowse(
         elements: args.elements ?? false,
         includeLinks: ctx.config.distill.includeLinks,
         publisherMarkdown: ctx.config.distill.publisherMarkdown,
+        redact: ctx.config.policy.redactSecrets !== false,
         includeImages: ctx.config.distill.includeImages,
       });
       await ctx.progress(2, total, 'Formatting');

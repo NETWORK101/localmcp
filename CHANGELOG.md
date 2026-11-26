@@ -6,9 +6,9 @@ Signed in, but scoped, now covers *where* the agent reads as you, not just wheth
 
 ### Security
 - **Signed-in sites.** `localmcp login <url>` records that host in `localmcp-sites.json` inside the profile. Only those hosts open with the saved profile; every other URL opens in a throwaway context with no cookies. In 0.3 a third-party page opened in the profile could make credentialed requests to your signed-in sites; a regression test now shows 0.3's exposure and 0.4's fix side by side.
-- **Egress guard (`policy.egress`, default `"confirm"`).** After the agent reads a page with your session, opening a host that isn't a signed-in site, in `policy.allow`, or already approved asks you first through MCP elicitation. Hosts the agent read *before* the signed-in read aren't trusted, since the injected page is usually read first. Clients without elicitation get a refusal naming the fix. `"block"` refuses outright; `"open"` restores 0.3.
-- **Redaction (`policy.redactSecrets`, default on).** API keys (Stripe, OpenAI, Anthropic, GitHub, npm, Slack, AWS, Google), JWTs, private key blocks and Luhn-valid card numbers are replaced with labelled stubs in text and `structuredContent`. Screenshots taken with your session carry a note that images aren't redacted.
-- **Audit log.** `~/.localmcp/audit.jsonl` (mode 600) gets one line per call, refusals included: tool, host, path, session, outcome, redactions. Query strings and fragments are never logged.
+- **Egress guard (`policy.egress`, default `"confirm"`).** Once a call opens a page with your session, opening a host that isn't a signed-in site, in `policy.allow`, or approved by you asks you first through MCP elicitation. Hosts the agent has merely read are never trusted, since the injected page is usually read first. The guard arms when the signed-in call *starts*, so concurrent calls can't slip out, and it checks every main-frame hop: server redirects (walked hop by hop before the browser follows them), script navigation and form submits. An open redirect on a signed-in site can't carry data off. Clients without elicitation get a refusal naming the fix. `"block"` refuses outright; `"open"` restores 0.3.
+- **Redaction (`policy.redactSecrets`, default on).** API keys (Stripe, OpenAI, Anthropic, GitHub, npm, Slack, AWS, Google), JWTs, private key blocks and card-shaped, Luhn-valid numbers are replaced with labelled stubs in text, `structuredContent`, sampling prompts and stored diff snapshots. Pages are redacted before the token budget cuts them, so a truncated key can't slip through, and the scanner stays linear on hostile input. Screenshots taken with your session carry a note that images aren't redacted.
+- **Audit log.** `~/.localmcp/audit.jsonl` (mode 600) gets one line per call, refusals included: tool, host, path, session, outcome, redactions. Query strings and fragments are never logged, and `usage.db` now stores a hash in their place too.
 - **`interact` per host.** With a scoped profile, `interact` stays listed and works on anonymous pages; it's refused on signed-in ones unless `allowInteract: true`.
 - **Supply chain.** Releases publish with npm Trusted Publishing (OIDC, provenance) instead of a long-lived `NPM_TOKEN`, then publish `server.json` to the MCP registry. Actions are pinned to commit SHAs, CI runs `npm audit signatures` and fails on high/critical advisories, and Dependabot proposes updates after a 7-day cooldown.
 
@@ -21,7 +21,11 @@ Signed in, but scoped, now covers *where* the agent reads as you, not just wheth
 - `server.json` points at the live site instead of the parked localmcp.dev.
 
 ### Upgrading
-Profiles created before 0.4 have no site list and keep working exactly as before: every page opens signed in. Each run says so once. Run `localmcp sites add <host>` for the sites you signed in to, or `localmcp login <url>` again, to scope it. `localmcp doctor` checks the result.
+- **Profiles created before 0.4** have no site list, so every page still opens signed in, and each run says so once. Because every read is then signed in, the egress guard asks before each new host after the first call, and refuses on clients without elicitation. Run `localmcp sites add <host>` for the sites you signed in to (or `localmcp login <url>` again) and only those hosts stay signed in. `localmcp doctor` checks the result.
+- **An attached browser (`cdpEndpoint`)** behaves the same way. Set `policy.allow` to the hosts the agent needs.
+- A redirect from a signed-in site to a host outside the site list (an expired session bouncing to a sign-in provider, say) is stopped after a signed-in read. Add that host to `policy.allow` if it's expected.
+- Diff snapshots stored by 0.3 are keyed by the raw URL, so the first `diff: true` read of each URL after upgrading takes a new baseline.
+- `localmcp sites add/remove` takes effect without restarting the server. Wildcards over public suffixes (`*.com`, `*.co.uk`, `*.github.io`) are refused.
 
 ## 0.3.1 — 2026-10-12
 

@@ -146,7 +146,7 @@ localmcp opens its own tabs in your existing session and never closes your brows
 
 An attached browser has no site list: every page opens with your cookies, so set `policy.allow` to the hosts the agent needs. The same holds for a profile created before 0.4; results say so once per run until you run `localmcp sites add <host>`.
 
-> **Signed in, but scoped.** With `policy.allowInteract: "auto"` (the default) the agent reads signed-in pages but can't click or type on them; `interact` still works on anonymous pages. After the agent reads a page with your session, opening a host that isn't a signed-in site, in `policy.allow`, or already approved **asks you first** (MCP elicitation). That's the step a prompt injection needs to carry what it read somewhere else in a URL. Clients that can't ask get a refusal that names the fix. Run `npx @localmcp_serv/localmcp doctor` to see what the agent can reach as you.
+> **Signed in, but scoped.** With `policy.allowInteract: "auto"` (the default) the agent reads signed-in pages but can't click or type on them; `interact` still works on anonymous pages. After the agent reads a page with your session, opening a host that isn't a signed-in site, in `policy.allow`, or already approved **asks you first** (MCP elicitation). That's the step a prompt injection needs to carry what it read somewhere else in a URL. Redirects and script navigations are checked hop by hop, so an open redirect on a signed-in site can't carry data off either. Clients that can't ask get a refusal that names the fix. Run `npx @localmcp_serv/localmcp doctor` to see what the agent can reach as you.
 
 ## Browsers
 

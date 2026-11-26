@@ -15,7 +15,6 @@ interface Rule {
 }
 
 const RULES: Rule[] = [
-  { label: 'private-key', re: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/g, keep: 0 },
   { label: 'stripe-key', re: /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b/g, keep: 8 },
   { label: 'stripe-webhook-secret', re: /\bwhsec_[A-Za-z0-9]{20,}\b/g, keep: 6 },
   { label: 'anthropic-key', re: /\bsk-ant-[A-Za-z0-9_-]{20,}/g, keep: 7 },
@@ -26,7 +25,14 @@ const RULES: Rule[] = [
   { label: 'aws-access-key', re: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, keep: 4 },
   { label: 'google-api-key', re: /\bAIza[0-9A-Za-z_-]{35}\b/g, keep: 4 },
   { label: 'jwt', re: /\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, keep: 0 },
-  { label: 'card-number', re: /\b\d(?:[ -]?\d){12,18}\b/g, keep: 0, check: luhn },
+  // Card-shaped only: IIN 3–6, then 13–19 contiguous digits, 4-4-4-4(-3) or Amex 4-6-5 with one
+  // consistent separator. Dates, timestamps (start with 1) and phone numbers don't fit.
+  {
+    label: 'card-number',
+    re: /\b(?:[3-6]\d{12,18}|[3-6]\d{3}([ -])\d{4}\1\d{4}\1\d{1,7}|3[47]\d{2}([ -])\d{6}\2\d{5})\b/g,
+    keep: 0,
+    check: luhn,
+  },
 ];
 
 export function luhn(candidate: string): boolean {
@@ -50,11 +56,51 @@ export interface Redaction {
   found: Record<string, number>;
 }
 
+const BEGIN_RE = /-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY-----/y;
+const END_MARK = '-----END ';
+const KEY_TAIL_RE = /[A-Za-z0-9 ]{0,40}PRIVATE KEY-----/y;
+
+/**
+ * Private key blocks, found with indexOf rather than a lazy regex so a page stuffed with BEGIN
+ * markers stays linear. An unterminated block (cut by a page or a budget) is removed through the
+ * end of its base64 run, so a partial key never survives.
+ */
+function redactPrivateKeys(input: string, found: Record<string, number>): string {
+  let out = '';
+  let pos = 0;
+  let nextEnd = -2; // cached index of the next END marker; -1 = none left
+  while (true) {
+    const start = input.indexOf('-----BEGIN ', pos);
+    if (start === -1) break;
+    BEGIN_RE.lastIndex = start;
+    if (!BEGIN_RE.test(input)) {
+      out += input.slice(pos, start + 11);
+      pos = start + 11;
+      continue;
+    }
+    const bodyStart = BEGIN_RE.lastIndex;
+    if (nextEnd !== -1 && nextEnd < bodyStart) nextEnd = input.indexOf(END_MARK, bodyStart);
+    let stop = -1;
+    if (nextEnd !== -1) {
+      KEY_TAIL_RE.lastIndex = nextEnd + END_MARK.length;
+      if (KEY_TAIL_RE.test(input)) stop = KEY_TAIL_RE.lastIndex;
+    }
+    if (stop === -1 || input.slice(bodyStart, nextEnd).includes('-----BEGIN ')) {
+      stop = bodyStart;
+      while (stop < input.length && /[A-Za-z0-9+/=\s]/.test(input[stop])) stop++;
+    }
+    out += input.slice(pos, start) + '[redacted private-key]';
+    found['private-key'] = (found['private-key'] ?? 0) + 1;
+    pos = stop;
+  }
+  return out + input.slice(pos);
+}
+
 export function redactSecrets(input: string): Redaction {
   const found: Record<string, number> = {};
-  let text = input;
+  let text = redactPrivateKeys(input, found);
   for (const rule of RULES) {
-    text = text.replace(rule.re, (m) => {
+    text = text.replace(rule.re, (m: string) => {
       if (rule.check && !rule.check(m)) return m;
       found[rule.label] = (found[rule.label] ?? 0) + 1;
       const tail = rule.label === 'card-number' ? `…${m.replace(/\D/g, '').slice(-4)}` : '';

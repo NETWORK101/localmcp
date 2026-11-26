@@ -53,7 +53,7 @@ export function normaliseSite(input: string): string | null {
   if (!raw) return null;
   if (raw.startsWith('*.')) {
     const rest = normaliseSite(raw.slice(2));
-    return rest && !rest.startsWith('*.') ? `*.${rest}` : null;
+    return rest && !rest.startsWith('*.') && !isPublicSuffixLike(rest) ? `*.${rest}` : null;
   }
   try {
     const url = new URL(raw.includes('://') ? raw : `https://${raw}`);
@@ -62,6 +62,25 @@ export function normaliseSite(input: string): string | null {
   } catch {
     return null;
   }
+}
+
+// Hosting platforms where every subdomain belongs to someone else.
+const SHARED_SUFFIXES = new Set([
+  'github.io', 'gitlab.io', 'pages.dev', 'workers.dev', 'vercel.app', 'netlify.app', 'web.app',
+  'firebaseapp.com', 'herokuapp.com', 'appspot.com', 'blogspot.com', 'azurewebsites.net',
+  'cloudfront.net', 'onrender.com', 'fly.dev', 'replit.app', 'ngrok.io', 'ngrok-free.app',
+]);
+const SECOND_LEVEL = new Set(['co', 'com', 'net', 'org', 'gov', 'edu', 'ac', 'ne', 'or', 'go', 'gob', 'nic']);
+
+/**
+ * "*.com", "*.co.uk" or "*.github.io" would put most of the web in the signed-in profile.
+ * A heuristic, not the Public Suffix List: it catches the forms people actually type.
+ */
+export function isPublicSuffixLike(host: string): boolean {
+  const labels = host.split('.');
+  if (labels.length < 2) return true;
+  if (SHARED_SUFFIXES.has(host)) return true;
+  return labels.length === 2 && labels[1].length === 2 && SECOND_LEVEL.has(labels[0]);
 }
 
 export function addSite(profilePath: string, input: string, via: SiteEntry['via'] = 'manual'): string | null {

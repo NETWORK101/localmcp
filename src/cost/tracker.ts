@@ -1,7 +1,25 @@
 import Database from 'better-sqlite3';
+import { createHash } from 'crypto';
 import { mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
 import { STATE_DIR } from '../config/schema.js';
+
+/**
+ * Query strings and fragments carry magic-link tokens and, in an injection, exfiltrated data.
+ * Store a short hash in their place: distinct URLs stay distinct (diff snapshots still match),
+ * but the values never land in usage.db. Idempotent, so hashed keys can be looked up again.
+ */
+export function storageKey(raw: string): string {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return raw;
+  }
+  const rest = u.search + u.hash;
+  if (!rest || /^\?~h=[0-9a-f]{12}$/.test(rest)) return u.href;
+  return `${u.origin}${u.pathname}?~h=${createHash('sha256').update(rest).digest('hex').slice(0, 12)}`;
+}
 
 export class UsageTracker {
   private db: Database.Database;
@@ -35,7 +53,7 @@ export class UsageTracker {
   record(tool: string, tokensOut: number, durationMs: number, url?: string): void {
     this.db.prepare(
       'INSERT INTO usage (tool, url, tokens_out, duration_ms) VALUES (?, ?, ?, ?)'
-    ).run(tool, url ?? null, tokensOut, durationMs);
+    ).run(tool, url ? storageKey(url) : null, tokensOut, durationMs);
   }
 
   todayUsage(): { sessions: number; tokens: number; estimatedCost: string } {
@@ -66,14 +84,14 @@ export class UsageTracker {
   getSnapshot(url: string): { markdown: string; tokenCount: number; updatedAt: string } | null {
     const row = this.db.prepare(
       'SELECT markdown, token_count as tokenCount, updated_at as updatedAt FROM snapshots WHERE url = ?'
-    ).get(url) as any;
+    ).get(storageKey(url)) as any;
     return row ?? null;
   }
 
   saveSnapshot(url: string, markdown: string, tokenCount: number): void {
     this.db.prepare(
       'INSERT INTO snapshots (url, markdown, token_count, updated_at) VALUES (?, ?, ?, datetime(\'now\')) ON CONFLICT(url) DO UPDATE SET markdown = excluded.markdown, token_count = excluded.token_count, updated_at = datetime(\'now\')'
-    ).run(url, markdown, tokenCount);
+    ).run(storageKey(url), markdown, tokenCount);
   }
 
   listSnapshots(limit: number = 100): Array<{ url: string; tokenCount: number; updatedAt: string }> {

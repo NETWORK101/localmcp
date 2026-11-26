@@ -1,8 +1,8 @@
 import { chromium, firefox, webkit, Browser, BrowserContext, BrowserType, Page } from "playwright";
-import { existsSync } from "fs";
+import { existsSync, statSync } from "fs";
 import { PageWrapper } from "./page.js";
 import type { BrowserEngine, ProfileMode } from "../config/schema.js";
-import { isSignedInSite, loadSites, type SiteEntry } from "../security/sites.js";
+import { isSignedInSite, loadSites, sitesPath, type SiteEntry } from "../security/sites.js";
 
 export interface BrowserManagerConfig {
   timeout: number;
@@ -18,7 +18,14 @@ export interface BrowserManagerConfig {
   cdpEndpoint?: string;
   /** Signed-in sites for the persistent profile. Defaults to the profile's localmcp-sites.json. */
   sites?: SiteEntry[];
+  /**
+   * Checked on every main-frame navigation hop (redirects included) while `active()`.
+   * Returns a reason to block, or null.
+   */
+  navigationGuard?: { active: () => boolean; check: (url: string) => string | null };
 }
+
+const MAX_REDIRECTS = 10;
 
 export interface GetPageOptions {
   timeout?: number;
@@ -83,11 +90,14 @@ export class BrowserManager {
   /** Set when the persistent profile couldn't be opened (locked by another process). */
   private persistentFailed = false;
   private notices: string[] = [];
-  private sites: SiteEntry[];
+  private sitesCache: SiteEntry[];
+  private sitesMtime = 0;
+  private lastBlocked: string | null = null;
 
   constructor(config?: Partial<BrowserManagerConfig>) {
     this.config = { ...DEFAULT_BROWSER_CONFIG, ...config };
-    this.sites = this.config.sites ?? (this.profilePath ? loadSites(this.profilePath) : []);
+    this.sitesCache = this.config.sites ?? [];
+    this.refreshSites();
     liveManagers.add(this);
     if (!signalHandlersInstalled) {
       signalHandlersInstalled = true;
@@ -107,6 +117,25 @@ export class BrowserManager {
   /** The mode of the most capable session opened so far (null until the first page). */
   get sessionKind(): SessionKind | null {
     return this.sharedKind ?? (this.browser ? "ephemeral" : null);
+  }
+
+  /** Re-read localmcp-sites.json when it changes, so `sites add/remove` apply without a restart. */
+  private refreshSites(): void {
+    if (this.config.sites || !this.profilePath) return;
+    let mtime = 0;
+    try {
+      mtime = statSync(sitesPath(this.profilePath)).mtimeMs;
+    } catch {
+      mtime = -1;
+    }
+    if (mtime === this.sitesMtime) return;
+    this.sitesMtime = mtime;
+    this.sitesCache = mtime === -1 ? [] : loadSites(this.profilePath);
+  }
+
+  private get sites(): SiteEntry[] {
+    this.refreshSites();
+    return this.sitesCache;
   }
 
   get signedInSites(): readonly SiteEntry[] {
@@ -223,24 +252,79 @@ export class BrowserManager {
     }
 
     try {
-      if (this.config.blockRequest) {
+      const block = this.config.blockRequest;
+      const guard = this.config.navigationGuard;
+      if (block || guard) {
         // Page-level (not context-level) routing: in CDP mode the context is the user's own
         // browser, and their other tabs must not be intercepted.
-        const block = this.config.blockRequest;
-        await page.route('**/*', (r) =>
-          block(r.request().url()) ? r.abort('blockedbyclient') : r.continue()
-        );
+        // The URL this call asked for was already vetted by the runtime; every later hop wasn't.
+        let vetted: string | null = new URL(url).href;
+        await page.route('**/*', async (r) => {
+          const req = r.request();
+          if (block?.(req.url())) return r.abort('blockedbyclient');
+          const isMain = req.isNavigationRequest() && req.frame() === page.mainFrame();
+          if (isMain && vetted === req.url()) {
+            vetted = null;
+            const reason = guard?.active() ? await this.walkNavigation(r, guard.check, true) : null;
+            if (reason) {
+              this.lastBlocked = reason;
+              this.notices.push(`A navigation was stopped: ${reason}`);
+              return r.abort('blockedbyclient');
+            }
+            return r.continue();
+          }
+          if (guard?.active() && isMain) {
+            const reason = await this.walkNavigation(r, guard.check);
+            if (reason) {
+              this.lastBlocked = reason;
+              this.notices.push(`A navigation was stopped: ${reason}`);
+              return r.abort('blockedbyclient');
+            }
+          }
+          return r.continue();
+        });
       }
+      this.lastBlocked = null;
       await navigate(page, url, timeout, opts?.waitFor);
     } catch (err) {
       await (ownedContext ? ownedContext.close() : page.close()).catch(() => {});
+      if (this.lastBlocked) throw new Error(this.lastBlocked);
       throw err;
     }
 
     return new PageWrapper(page, ownedContext, timeout, route === "signed-in");
   }
 
+  /**
+   * Server redirects never reach the route handler (Chromium follows them internally), so for a
+   * GET we fetch hop by hop without following and check each Location before letting the
+   * browser navigate for real. Non-GET navigations (form posts) are checked on their URL only;
+   * replaying them would submit twice.
+   */
+  private async walkNavigation(
+    r: import("playwright").Route,
+    check: (url: string) => string | null,
+    skipFirst = false
+  ): Promise<string | null> {
+    let current = r.request().url();
+    const first = skipFirst ? null : check(current);
+    if (first || r.request().method() !== "GET") return first;
+    for (let hop = 0; hop < MAX_REDIRECTS; hop++) {
+      const res = await r.fetch({ url: current, maxRedirects: 0 }).catch(() => null);
+      if (!res) return null;
+      const location = res.headers()["location"];
+      await res.dispose().catch(() => {});
+      if (res.status() < 300 || res.status() >= 400 || !location) return null;
+      current = new URL(location, current).href;
+      const reason = check(current);
+      if (reason) return reason;
+    }
+    return null;
+  }
+
   async cleanup(): Promise<void> {
+    // A launch still in flight would otherwise finish after cleanup and leak a locked profile.
+    await Promise.allSettled([this.launchingShared, this.launchingBrowser]);
     for (const context of this.contexts) {
       await context.close().catch(() => {});
     }

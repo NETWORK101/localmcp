@@ -74,8 +74,10 @@ export async function runInit(): Promise<void> {
   } else if (existsSync(legacyConfigPath)) {
     console.log(`${dim('•')} Found ${legacyConfigPath} — still honoured. Rename it to .localmcp.json when convenient.`);
   } else {
+    // Machine-specific absolute paths stay out of a file that may be committed.
     const { profileDir: _omit, ...browser } = DEFAULT_CONFIG.browser;
-    const starter = { ...DEFAULT_CONFIG, browser };
+    const { path: _omitAudit, ...audit } = DEFAULT_CONFIG.audit;
+    const starter = { ...DEFAULT_CONFIG, browser, audit };
     writeFileSync(localConfigPath, JSON.stringify(starter, null, 2) + '\n', 'utf-8');
     console.log(`${green('✓')} Created ${localConfigPath}`);
   }

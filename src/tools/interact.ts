@@ -105,6 +105,7 @@ export async function handleInteract(
         elements: true,
         includeLinks: ctx.config.distill.includeLinks,
         publisherMarkdown: false, // after actions, the live DOM is the truth
+        redact: ctx.config.policy.redactSecrets !== false,
         includeImages: ctx.config.distill.includeImages,
       });
 
