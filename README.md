@@ -210,6 +210,7 @@ Host globs: `example.com` (exact host, any port), `*.example.com` (subdomains, n
 - **Prompt-injection fence.** Page content comes back inside `<untrusted-page-content>` tags, and the server's `instructions` tell the model to treat it as data. Pages that try to close the fence early are neutralised. This *reduces* injection risk; it doesn't eliminate it. Keep `interact` confirmations on in your client.
 - **Session routing.** A saved login opens only its signed-in sites; everything else opens with no cookies, so third-party pages can't ride your session.
 - **Egress guard.** After a signed-in read, new hosts need your approval (`policy.egress`).
+  It guards what the *agent* chooses: URLs, redirects, script navigation, form posts and new windows. It doesn't police a page's own scripts, which can always send data elsewhere with an image or `fetch`; scope signed-in sites to ones you trust for that reason.
 - **Redaction.** Stripe, OpenAI, Anthropic, GitHub, npm, Slack, AWS and Google keys, JWTs, private key blocks and Luhn-valid card numbers are replaced with labelled stubs (`sk_live_[redacted stripe-key]`) in text and `structuredContent`. Screenshots are images and aren't redacted; signed-in screenshots say so.
 - **Audit log.** `localmcp audit` lists every call: tool, host, path (queries and fragments dropped), signed-in or anonymous, outcome, redactions.
 - **Circuit breaker.** Daily session and token caps (local SQLite at `~/.localmcp/usage.db`). `npx @localmcp_serv/localmcp usage` shows totals. `LOCALMCP_NO_LIMIT=1` overrides.

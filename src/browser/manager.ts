@@ -306,8 +306,11 @@ export class BrowserManager {
    * - No redirect: the checked response itself is served (one request, nothing to re-follow).
    * - GET with redirects: every hop is checked, then the browser navigates for real.
    * - Non-GET (form posts): sent once; the response is served after checking its Location, and
-   *   any GET hops after a 301/302/303 are walked too. 307/308 would resend the body, so they
-   *   are only followed within the same origin.
+   *   any GET hops after a 301/302/303 are walked too. 307/308 would resend the body: refused.
+   *
+   * Scope: this guards navigations the *agent* chose or triggered. Scripts on a page can already
+   * send data anywhere with an image or fetch, so page-initiated popups and a signed-in site's
+   * server answering a re-request differently are out of scope; see the README security model.
    */
   private async guardNavigation(
     r: import("playwright").Route,
@@ -320,10 +323,10 @@ export class BrowserManager {
       const first = check(current);
       if (first) return { block: first };
     }
-    const fetchHop = (url: string, original: boolean) =>
-      r.fetch(original ? { maxRedirects: 0 } : { url, method: "GET", postData: undefined, maxRedirects: 0 }).catch(() => null);
-
-    const firstRes = await fetchHop(current, true);
+    // Later hops are fresh GETs through the context's own request client: its cookies for that
+    // URL, none of the original request's headers or body.
+    const api = req.frame().page().context().request;
+    const firstRes = await r.fetch({ maxRedirects: 0 }).catch(() => null);
     if (!firstRes) return { block: `couldn't verify where ${new URL(current).host} redirects, so the navigation was stopped.` };
     let res = firstRes;
     for (let hop = 0; ; hop++) {
@@ -338,15 +341,14 @@ export class BrowserManager {
       const next = new URL(location, current).href;
       const reason = check(next);
       if (reason) return { block: reason };
-      if (req.method() !== "GET" && res === firstRes && (status === 307 || status === 308)) {
-        if (new URL(next).origin !== new URL(current).origin) {
-          return { block: `a ${status} redirect would resend form data to ${new URL(next).host}.` };
-        }
-        return { response: firstRes };
+      if (req.method() !== "GET" && (status === 307 || status === 308)) {
+        // The browser would resend the body to `next`, and what `next` does with it can't be
+        // probed without sending it twice. Rare enough to refuse while the guard is armed.
+        return { block: `a ${status} redirect would resend form data to ${new URL(next).host}.` };
       }
       if (res !== firstRes) await res.dispose().catch(() => {});
       current = next;
-      const nextRes = await fetchHop(current, false);
+      const nextRes = await api.get(current, { maxRedirects: 0, failOnStatusCode: false }).catch(() => null);
       if (!nextRes) return { block: `couldn't verify where ${new URL(current).host} redirects, so the navigation was stopped.` };
       res = nextRes;
     }
